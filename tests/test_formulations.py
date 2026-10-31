@@ -44,3 +44,9 @@ def test_sparse_array_inputs_preserve_lifting_semantics():
     object.__setattr__(p,'P',sparse.csc_array(p.P))
     a,b=[solve(p,method) for method in ['asymmetric','lifted']]
     assert a['x']==pytest.approx(b['x'],abs=2e-6)
+
+@pytest.mark.parametrize('method',['generalized','asymmetric','lifted'])
+def test_unconstrained_convex_qp(method):
+    p=Problem(sparse.eye(1,format='csc'),np.array([-3.]),sparse.csc_matrix((0,1)),
+              np.array([]),np.array([]),Penalty.uniform(0))
+    assert solve(p,method)['x']==pytest.approx([3.],abs=1e-6)

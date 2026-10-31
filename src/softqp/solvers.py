@@ -21,7 +21,9 @@ def solve(problem: Problem, method='generalized', **settings):
         solver.setup(sparse.triu(problem.P, format='csc'), problem.q, problem.A,
                      problem.lower, problem.upper, **defaults)
         types = np.where(p.soft, int(PenaltyType.OSQP_PENALTY_L1L2), int(PenaltyType.OSQP_PENALTY_NONE)).astype(np.int32)
-        if method == 'asymmetric':
+        if m == 0:
+            pass
+        elif method == 'asymmetric':
             solver._solver.setup_asymmetric_penalty(types, *[np.ascontiguousarray(a,dtype=np.float64) for a in
                 (p.lower_linear,p.lower_quadratic,p.upper_linear,p.upper_quadratic)])
         else:
