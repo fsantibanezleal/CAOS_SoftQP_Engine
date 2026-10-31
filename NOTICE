@@ -1,0 +1,9 @@
+SoftQP native engine
+
+Contains modified OSQP and OSQP Python interface (Apache-2.0).
+OSQP contributors: https://github.com/osqp/osqp
+Generalized penalty implementation: A2R-Lab/osqp at 2500405a1bc63387721feec64f0c050fa99223dd.
+Python binding: A2R-Lab/osqp-python at d6df7f987ba40e75bfac338ab19a97b2c92f7334.
+OSQPSlack research repository: https://github.com/A2R-Lab/OSQPSlack (MIT).
+Original notices and licenses are retained under native/.
+The namespace and reproducible local-source build are modified for SoftQP.
