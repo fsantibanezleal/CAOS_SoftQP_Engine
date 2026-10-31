@@ -6,7 +6,7 @@ list(APPEND CMAKE_MESSAGE_INDENT "  ")
 FetchContent_Declare(
   qdldl
   GIT_REPOSITORY https://github.com/osqp/qdldl.git
-  GIT_TAG v0.1.8
+  GIT_TAG 138fdac58b9cd1c4137ff1b99152c8108a6cff5b # upstream v0.1.8
   )
 
 # Make QDLDL use the same types as OSQP
