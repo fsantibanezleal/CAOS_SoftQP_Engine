@@ -5,7 +5,7 @@ from dataclasses import replace
 import time
 import numpy as np
 from scipy import sparse
-from .solvers import _setup_native, UnsupportedProblemError
+from .solvers import _setup_native, _setup_daqp, _read_daqp, UnsupportedProblemError
 from .lifting import lift_problem
 
 
@@ -144,4 +144,89 @@ class PreparedSolver:
             setup_seconds=float(result.info.setup_time),
             solve_seconds=float(result.info.solve_time),
             elapsed_seconds=time.perf_counter() - start,
+        )
+
+
+class DaqpWorkspace:
+    """Retain DAQP's transformed QP and active state for q/bound updates.
+
+    Matrices, penalty weights, finite sides and hard equality classification are
+    fixed. Bounds are passed in original units, and sense flags are not resent,
+    so DAQP can reuse the previous active state as its documented update API does.
+    """
+
+    def __init__(self, problem, *, eps_abs=1e-7, eps_rel=1e-7, max_iter=100000):
+        start = time.perf_counter()
+        self._problem = copy.deepcopy(problem)
+        self._problem.validate()
+        self._defaults = dict(eps_abs=eps_abs, eps_rel=eps_rel, max_iter=max_iter)
+        self._model, self._setup_seconds = _setup_daqp(self._problem, self._defaults)
+        self.setup_wall_seconds = time.perf_counter() - start
+        self.update_wall_seconds = 0.0
+        self.update_count = 0
+
+    @property
+    def problem(self):
+        return copy.deepcopy(self._problem)
+
+    def update(self, *, q=None, lower=None, upper=None):
+        start = time.perf_counter()
+        old = self._problem
+        candidate = replace(
+            old,
+            q=old.q.copy() if q is None else np.array(q, copy=True),
+            lower=old.lower.copy() if lower is None else np.array(lower, copy=True),
+            upper=old.upper.copy() if upper is None else np.array(upper, copy=True),
+        )
+        candidate.validate()
+        if not (
+            np.array_equal(np.isfinite(old.lower), np.isfinite(candidate.lower))
+            and np.array_equal(np.isfinite(old.upper), np.isfinite(candidate.upper))
+        ):
+            raise ValueError("DAQP workspace requires an unchanged finite-side pattern")
+        if not np.array_equal(
+            (old.lower == old.upper) & ~old.penalty.soft,
+            (candidate.lower == candidate.upper) & ~old.penalty.soft,
+        ):
+            raise ValueError(
+                "DAQP workspace requires unchanged hard equality classification"
+            )
+        flag = self._model.update(
+            f=np.ascontiguousarray(candidate.q, dtype=np.float64),
+            bupper=np.ascontiguousarray(candidate.upper, dtype=np.float64),
+            blower=np.ascontiguousarray(candidate.lower, dtype=np.float64),
+        )
+        if flag < 0:
+            self._model, self._setup_seconds = _setup_daqp(old, self._defaults)
+            raise ValueError(
+                f"DAQP rejected vector update: {flag}; previous problem restored"
+            )
+        self._problem = candidate
+        self.update_count += 1
+        self.update_wall_seconds = time.perf_counter() - start
+
+    def solve(self):
+        start = time.perf_counter()
+        p = self._problem
+        result, x, y, dimensions, settings = _read_daqp(
+            p, self._model, self._setup_seconds
+        )
+        metrics = p.evaluate(x) if result.info.status_val in (1, 2) else None
+        if metrics is not None:
+            metrics["stationarity_residual"] = float(
+                np.max(np.abs(p.P @ x + p.q + p.A.T @ y), initial=0)
+            )
+        return dict(
+            method="daqp",
+            status=result.info.status,
+            status_code=int(result.info.status_val),
+            x=x.tolist() if metrics is not None else None,
+            y=y.tolist() if metrics is not None else None,
+            metrics=metrics,
+            dimensions=dimensions,
+            iterations=int(result.info.iter),
+            setup_seconds=float(result.info.setup_time),
+            solve_seconds=float(result.info.solve_time),
+            elapsed_seconds=time.perf_counter() - start,
+            backend_settings=settings,
         )
