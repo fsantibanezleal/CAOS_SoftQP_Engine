@@ -1,3 +1,4 @@
+# Modified for SoftQP, 2026-10-31: build only the pinned local native source.
 cmake_minimum_required(VERSION 3.15...3.26)
 project(ext)
 
@@ -58,16 +59,7 @@ set(PYTHON_INCLUDE_DIRS ${Python_INCLUDE_DIRS})
 message(STATUS "Fetching/configuring OSQP")
 list(APPEND CMAKE_MESSAGE_INDENT "  ")
 set(OSQP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../osqp" CACHE PATH "Pinned vendored OSQP")
-if(OSQP_SOURCE_DIR)
-  FetchContent_Declare(osqp SOURCE_DIR "${OSQP_SOURCE_DIR}")
-else()
-  FetchContent_Declare(
-    osqp
-    GIT_REPOSITORY https://github.com/A2R-Lab/osqp.git
-    # TODO: pin back to a release tag once the soft-constraint API is released
-    GIT_TAG general_slack
-  )
-endif()
+FetchContent_Declare(osqp SOURCE_DIR "${OSQP_SOURCE_DIR}")
 list(POP_BACK CMAKE_MESSAGE_INDENT)
 FetchContent_MakeAvailable(osqp)
 

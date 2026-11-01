@@ -1,3 +1,4 @@
+# Modified for SoftQP, 2026-10-31: separate import namespace for the pinned native core.
 import sys
 import os
 from types import SimpleNamespace

@@ -25,6 +25,10 @@ The mathematical reference is [Schwan, Lew and Plancher (2026)](https://arxiv.or
 
 ## Original-space API
 
-`softqp.problem.Problem` declares a symmetric PSD Hessian, sparse constraint matrix, interval bounds and `Penalty` arrays. `softqp.solvers.solve(problem, method)` accepts `lifted`, `generalized` (symmetric weights) or `asymmetric` (side-specific elastic weights). It reports original-space objective components, physical violations, hard-row error, stationarity, dimensions and solver work. Failed solves carry no purported solution.
+`softqp.problem.Problem` declares a symmetric PSD Hessian, sparse constraint matrix, interval bounds and `Penalty` arrays. `softqp.solvers.solve(problem, method)` accepts `lifted`, `generalized` (symmetric weights) `asymmetric` (side-specific elastic weights), or `daqp` with the `comparisons` extra (a dense active-set reference). It reports original-space objective components, physical violations, hard-row error, stationarity, dimensions and solver work. Failed solves carry no purported solution.
 
 The asymmetric update supports the CPU builtin backend. Its derivation, sign conventions and limitations are in [penalty semantics](docs/penalty-semantics.md). `softqp.reference` preserves the authors' lifting helpers for Huber and grouped penalties, with their MIT notice.
+
+The DAQP adapter preserves original-scale side costs, exports backend settings, and refuses unsupported objectives. See [DAQP comparison](docs/daqp-comparison.md) for its positive-definite and quadratic-side restrictions.
+
+Symmetric penalties use the authors' compact signed/shared-slack lifting helper. Asymmetric penalties use explicit nonnegative lower and upper slacks. Performance comparisons must include the compact symmetric baseline rather than forcing an unnecessarily large general formulation.
