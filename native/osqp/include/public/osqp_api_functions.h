@@ -1,3 +1,5 @@
+/* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
+ * Original upstream copyright and Apache-2.0 license are retained. */
 #ifndef  OSQP_API_FUNCTIONS_H
 #define  OSQP_API_FUNCTIONS_H
 

@@ -1,4 +1,5 @@
 """Setuptools build of the pinned OSQP/pybind11 CMake extension."""
+
 from pathlib import Path
 import os
 import subprocess
@@ -8,6 +9,7 @@ from setuptools.command.build_ext import build_ext
 import pybind11
 
 ROOT = Path(__file__).parent.resolve()
+
 
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
@@ -27,8 +29,25 @@ class CMakeBuild(build_ext):
             "-DOSQP_ENABLE_INTERRUPT=OFF",
             "-DOSQP_BUILD_SHARED_LIB=OFF",
         ]
-        subprocess.run(["cmake", "-S", str(ROOT / "native/python"), "-B", str(build), *args], check=True)
-        subprocess.run(["cmake", "--build", str(build), "--config", config,
-                        "--parallel", os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", "2")], check=True)
+        subprocess.run(
+            ["cmake", "-S", str(ROOT / "native/python"), "-B", str(build), *args],
+            check=True,
+        )
+        subprocess.run(
+            [
+                "cmake",
+                "--build",
+                str(build),
+                "--config",
+                config,
+                "--parallel",
+                os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", "2"),
+            ],
+            check=True,
+        )
 
-setup(ext_modules=[Extension("softqp.ext_builtin", sources=[])], cmdclass={"build_ext": CMakeBuild})
+
+setup(
+    ext_modules=[Extension("softqp.ext_builtin", sources=[])],
+    cmdclass={"build_ext": CMakeBuild},
+)
