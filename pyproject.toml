@@ -7,7 +7,7 @@ name = "softqp"
 version = "0.1.0"
 description = "Native soft-constrained quadratic programs with inspectable penalty semantics"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12,<3.13"
 license = "Apache-2.0 AND MIT AND BSD-3-Clause"
 license-files = ["LICENSE", "NOTICE", "licenses/*.txt"]
 authors = [{name = "Felipe Santibáñez-Leal"}]
