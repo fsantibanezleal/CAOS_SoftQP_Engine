@@ -96,10 +96,12 @@ def solve_elastiqp(problem, *, eps_abs=1e-7, eps_rel=1e-7, max_iter=100000):
         dimensions=dict(
             variables=problem.q.size + rows.size,
             rows=2 * rows.size + int(equality.sum()),
-            nnz=problem.P.nnz
-            + np.count_nonzero(G)
-            + 2 * rows.size
-            + np.count_nonzero(A),
+            nnz=int(
+                problem.P.nnz
+                + np.count_nonzero(G)
+                + 2 * rows.size
+                + np.count_nonzero(A)
+            ),
         ),
         iterations=int(result.iters),
         setup_seconds=setup,

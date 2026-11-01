@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 import numpy as np
 import pytest
 from scipy import sparse
@@ -26,6 +27,7 @@ def test_elasti_side_weights_preserve_original_row_scale(target, scale):
     )
     actual = solve_elastiqp(problem, eps_abs=1e-9, eps_rel=1e-9)
     oracle = solve(problem, "lifted", eps_abs=1e-9, eps_rel=1e-9)
+    json.dumps(actual, allow_nan=False)
     assert actual["status_code"] == 1
     assert actual["x"] == pytest.approx(oracle["x"], abs=3e-6)
     assert actual["metrics"]["objective"] == pytest.approx(
@@ -51,6 +53,7 @@ def test_elasti_preserves_a_hard_equality():
     )
     actual = solve_elastiqp(problem)
     oracle = solve(problem, "lifted")
+    json.dumps(actual, allow_nan=False)
     assert actual["status_code"] == 1
     assert actual["x"] == pytest.approx(oracle["x"], abs=2e-6)
     assert actual["metrics"]["hard_violation"] < 1e-7
