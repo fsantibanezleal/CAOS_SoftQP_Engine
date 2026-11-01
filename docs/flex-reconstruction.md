@@ -9,3 +9,7 @@ The implementation uses the positive definite Schur system of the paper with fix
 Exact recovery of a feasible hard QP requires sufficiently large L1 weights relative to optimal multipliers; finite small weights can intentionally trade violations for base cost. The adapter claims no universal feasibility, infeasibility certificate or superiority. Its Python/SciPy loop is a reference implementation: timing against mature C solvers measures this implementation as well as the algorithm. Treat such timing separately from native-backend projection/lifting measurements.
 
 Validation covers analytic lower/upper scalar optima with both low and exact-penalty weights, random weighted side costs against independent stock-OSQP lifting, refusal of changed objectives/hard rows, and honest iteration-limit outcomes.
+
+## ElastiQP comparison
+
+`softqp.elasti.solve_elastiqp` consumes the published ElastiQP 0.2.0 dual active-set backend (Apache-2.0; https://github.com/StanfordASL/elastiqp). It retains pure L1 soft inequalities and hard equalities. Original hard inequalities, quadratic soft costs and non-positive-definite Hessians are explicitly unsupported by this bounded adapter. No objective regularizer is inserted; the proximal parameter is set to zero for this positive-definite comparison. Tests verify physical row scaling, asymmetric side costs, independent lifted parity, stationarity and exact hard equalities. Actual numeric backend settings accompany results. Install the optional `comparisons` dependencies to use it.
