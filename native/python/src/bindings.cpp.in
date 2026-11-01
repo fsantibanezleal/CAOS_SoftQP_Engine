@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional peak bindings and numerical status. */
 /* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
  * Original upstream copyright and Apache-2.0 license are retained. */
 #include <iostream>
@@ -10,6 +11,9 @@ using namespace pybind11::literals;
 
 #include "osqp_api_functions.h"
 #include "osqp_api_types.h"
+
+using PeakArray = py::array_t<OSQPFloat, py::array::c_style | py::array::forcecast>;
+using PeakGroups = py::array_t<OSQPInt, py::array::c_style>;
 
 class CSC {
     public:
@@ -121,6 +125,7 @@ class PyOSQPSolver {
         OSQPInt update_data_mat(py::object, py::object, py::object, py::object);
         OSQPInt setup_penalty(OSQPInt, py::object, py::object, py::object, py::object, OSQPInt, py::object);
         OSQPInt setup_asymmetric_penalty(py::array_t<OSQPInt, py::array::c_style | py::array::forcecast>, py::array_t<OSQPFloat, py::array::c_style | py::array::forcecast>, py::array_t<OSQPFloat, py::array::c_style | py::array::forcecast>, py::array_t<OSQPFloat, py::array::c_style | py::array::forcecast>, py::array_t<OSQPFloat, py::array::c_style | py::array::forcecast>);
+        OSQPInt setup_directional_peaks(OSQPInt, PeakGroups, PeakArray, PeakArray, PeakArray, PeakArray);
         OSQPInt update_penalty_types(OSQPInt, py::object);
         OSQPInt update_penalty_params(py::object, py::object, py::object);
         OSQPInt warm_start(py::object, py::object);
@@ -203,6 +208,7 @@ OSQPInt PyOSQPSolver::solve() {
     py::gil_scoped_release release;
     OSQPInt results = osqp_solve(this->_solver);
     py::gil_scoped_acquire acquire;
+    if (results==OSQP_SETTINGS_VALIDATION_ERROR) throw py::value_error("directional solve settings rejected");
     return results;
 }
 
@@ -329,6 +335,16 @@ OSQPInt PyOSQPSolver::setup_asymmetric_penalty(py::array_t<OSQPInt, py::array::c
  return status;
 }
 
+OSQPInt PyOSQPSolver::setup_directional_peaks(OSQPInt ngroups, PeakGroups groups,
+ PeakArray a, PeakArray b, PeakArray cl, PeakArray cu) {
+ if(groups.ndim()!=1 || a.ndim()!=1 || b.ndim()!=1 || cl.ndim()!=1 || cu.ndim()!=1 ||
+    groups.size()!=m || a.size()!=m || b.size()!=m || cl.size()!=m || cu.size()!=m)
+   throw py::value_error("directional peak arrays must have one entry per row");
+ OSQPInt status=osqp_setup_directional_peaks(_solver,ngroups,groups.data(),a.data(),b.data(),cl.data(),cu.data());
+ if(status) throw py::value_error("directional peak setup rejected: "+std::to_string(status));
+ return status;
+}
+
 OSQPInt PyOSQPSolver::update_penalty_types(OSQPInt default_type, py::object type) {
     OSQPInt* _type = NULL;
     py::array_t<OSQPInt> _type_arr;
@@ -412,6 +428,18 @@ OSQPInt PyOSQPSolver::codegen(const char *output_dir, const char *file_prefix, O
 }
 
 PYBIND11_MODULE(@OSQP_EXT_MODULE_NAME@, m) {
+    m.attr("OSQP_RHO_TOL") = OSQP_RHO_TOL;
+    m.def("directional_peak_prox", [](PeakArray r, PeakArray cl, PeakArray cu, PeakArray rho,
+                                     OSQPFloat a, OSQPFloat b) {
+      if(r.ndim()!=1 || cl.ndim()!=1 || cu.ndim()!=1 || rho.ndim()!=1 ||
+         r.size()==0 || cl.size()!=r.size() || cu.size()!=r.size() || rho.size()!=r.size())
+        throw py::value_error("matching nonempty directional peak vectors required");
+      py::array_t<OSQPFloat> out(r.size()); OSQPFloat threshold=0;
+      OSQPInt status=osqp_directional_peak_prox((OSQPInt)r.size(),r.data(),cl.data(),cu.data(),rho.data(),a,b,out.mutable_data(),&threshold);
+      if(status) throw py::value_error("directional peak input or arithmetic rejected: "+std::to_string(status));
+      return py::make_tuple(out,threshold);
+    });
+
 
 #ifdef OSQP_USE_FLOAT
     m.attr("OSQP_USE_FLOAT") = 1;
@@ -448,6 +476,7 @@ PYBIND11_MODULE(@OSQP_EXT_MODULE_NAME@, m) {
     .value("OSQP_NON_CVX", OSQP_NON_CVX)
     .value("OSQP_SIGINT", OSQP_SIGINT)
     .value("OSQP_UNSOLVED", OSQP_UNSOLVED)
+    .value("OSQP_NUMERICAL_ERROR", OSQP_NUMERICAL_ERROR)
     .export_values();
 
     // Solver Errors
@@ -606,11 +635,12 @@ PYBIND11_MODULE(@OSQP_EXT_MODULE_NAME@, m) {
     .def("update_data_mat", &PyOSQPSolver::update_data_mat, "P_x"_a.none(true), "P_i"_a.none(true), "A_x"_a.none(true), "A_i"_a.none(true))
     .def("setup_penalty", &PyOSQPSolver::setup_penalty, "default_type"_a, "type"_a.none(true), "alpha1"_a.none(true), "alpha2"_a.none(true), "delta"_a.none(true), "ngroups"_a, "group_id"_a.none(true))
     .def("setup_asymmetric_penalty", &PyOSQPSolver::setup_asymmetric_penalty)
+    .def("setup_directional_peaks", &PyOSQPSolver::setup_directional_peaks, "ngroups"_a, "groups"_a.noconvert(), "a"_a, "b"_a, "cl"_a, "cu"_a)
     .def("update_penalty_types", &PyOSQPSolver::update_penalty_types, "default_type"_a, "type"_a.none(true))
     .def("update_penalty_params", &PyOSQPSolver::update_penalty_params, "alpha1"_a.none(true), "alpha2"_a.none(true), "delta"_a.none(true))
     .def("update_settings", &PyOSQPSolver::update_settings)
     .def("update_rho", &PyOSQPSolver::update_rho)
-    .def("get_settings", &PyOSQPSolver::get_settings, py::return_value_policy::reference)
+    .def("get_settings", &PyOSQPSolver::get_settings, py::return_value_policy::copy)
 
     .def("adjoint_derivative_compute", &PyOSQPSolver::adjoint_derivative_compute, "dx"_a.none(true), "dy"_a.none(true))
     .def("adjoint_derivative_get_mat", &PyOSQPSolver::adjoint_derivative_get_mat, "dP"_a, "dA"_a)

@@ -4,6 +4,7 @@ import importlib.metadata
 from pathlib import Path
 import subprocess
 import sys
+import tomllib
 import softqp
 from packaging.specifiers import SpecifierSet
 
@@ -14,7 +15,8 @@ if installed.is_relative_to(project / "src"):
 if "site-packages" not in installed.parts:
     raise RuntimeError("Wheel smoke requires an isolated site-packages install")
 dist = importlib.metadata.distribution("softqp")
-assert dist.version == softqp.__version__ == "0.1.0"
+expected = tomllib.loads((project / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+assert dist.version == softqp.__version__ == expected
 assert SpecifierSet(dist.metadata["Requires-Python"]) == SpecifierSet(">=3.12,<3.13")
 names = {Path(str(file)).name for file in dist.files}
 assert {"LICENSE", "NOTICE", "AMD.txt", "OSQPSlack-MIT.txt"} <= names

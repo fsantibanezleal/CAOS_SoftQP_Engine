@@ -280,54 +280,50 @@ class OSQP:
         return constant(which, algebra=self.algebra)
 
     def update_settings(self, **kwargs):
-        assert self.settings is not None
-
-        # Some setting names have changed. Support the old names for now, but warn the caller.
-        renamed_settings = {
-            'polish': 'polishing',
-            'warm_start': 'warm_starting',
-        }
-        for k, v in renamed_settings.items():
-            if k in kwargs:
-                warnings.warn(
-                    f'"{k}" is deprecated. Please use "{v}" instead.',
-                    DeprecationWarning,
-                )
-                kwargs[v] = kwargs[k]
-                del kwargs[k]
-
-        settings_changed = False
-
-        if 'rho' in kwargs and self._solver is not None:
-            self._solver.update_rho(kwargs.pop('rho'))
+        if self.settings is None:
+            raise RuntimeError('Solver settings are not initialized')
+        # Stage the complete candidate before mutating either native state or
+        # its Python cache. A rejected update leaves both views unchanged.
+        candidate = self.ext.OSQPSettings()
+        self.ext.osqp_set_default_settings(candidate)
+        source = self._solver.get_settings() if self._solver is not None else self.settings
+        for name in self.ext.OSQPSettings.__dict__:
+            if not name.startswith('_'):
+                setattr(candidate, name, getattr(source, name))
+        for old, renamed in {'polish': 'polishing', 'warm_start': 'warm_starting'}.items():
+            if old in kwargs:
+                warnings.warn(f'"{old}" is deprecated. Please use "{renamed}" instead.', DeprecationWarning)
+                kwargs[renamed] = kwargs.pop(old)
         if 'solver_type' in kwargs:
             value = kwargs.pop('solver_type')
-            assert value in ('direct', 'indirect')
-            self.settings.linsys_solver = (
-                self.ext.osqp_linsys_solver_type.OSQP_DIRECT_SOLVER
-                if value == 'direct'
-                else self.ext.osqp_linsys_solver_type.OSQP_INDIRECT_SOLVER
-            )
-            settings_changed = True
+            if value not in ('direct', 'indirect'):
+                raise ValueError('solver_type must be direct or indirect')
+            candidate.linsys_solver = (self.ext.osqp_linsys_solver_type.OSQP_DIRECT_SOLVER
+                                      if value == 'direct' else self.ext.osqp_linsys_solver_type.OSQP_INDIRECT_SOLVER)
         if 'cg_preconditioner' in kwargs:
             value = kwargs.pop('cg_preconditioner')
-            assert value in (None, 'diagonal')
-            self.settings.cg_precond = (
-                self.ext.OSQP_DIAGONAL_PRECONDITIONER if value == 'diagonal' else self.ext.OSQP_NO_PRECONDITIONER
-            )
-            settings_changed = True
-
-        for k in self.ext.OSQPSettings.__dict__:
-            if not k.startswith('__'):
-                if k in kwargs:
-                    setattr(self.settings, k, kwargs.pop(k))
-                    settings_changed = True
-
+            if value not in (None, 'diagonal'):
+                raise ValueError('cg_preconditioner must be None or diagonal')
+            candidate.cg_precond = (self.ext.OSQP_DIAGONAL_PRECONDITIONER
+                                    if value == 'diagonal' else self.ext.OSQP_NO_PRECONDITIONER)
+        rho = kwargs.get('rho')
+        for name in self.ext.OSQPSettings.__dict__:
+            if not name.startswith('_') and name in kwargs:
+                setattr(candidate, name, kwargs.pop(name))
         if kwargs:
             raise ValueError(f'Unrecognized settings {list(kwargs.keys())}')
-
-        if settings_changed and self._solver is not None:
-            self.raises_error(self._solver.update_settings, self.settings)
+        if self._solver is not None:
+            previous = self._solver.get_settings()
+            self.raises_error(self._solver.update_settings, candidate)
+            if rho is not None:
+                try:
+                    self.raises_error(self._solver.update_rho, rho)
+                except Exception:
+                    self.raises_error(self._solver.update_settings, previous)
+                    raise
+            self.settings = self._solver.get_settings()
+        else:
+            self.settings = candidate
 
     def update(self, **kwargs):
         # TODO: sanity-check on types/dimensions

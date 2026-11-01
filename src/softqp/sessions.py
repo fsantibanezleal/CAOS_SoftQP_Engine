@@ -211,7 +211,8 @@ class DaqpWorkspace:
         result, x, y, dimensions, settings = _read_daqp(
             p, self._model, self._setup_seconds
         )
-        metrics = p.evaluate(x) if result.info.status_val in (1, 2) else None
+        from .solvers import DAQP_CANDIDATE_FLAGS
+        metrics = p.evaluate(x) if result.info.status_val in DAQP_CANDIDATE_FLAGS else None
         if metrics is not None:
             metrics["stationarity_residual"] = float(
                 np.max(np.abs(p.P @ x + p.q + p.A.T @ y), initial=0)

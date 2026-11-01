@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 /* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
  * Original upstream copyright and Apache-2.0 license are retained. */
 #include "osqp.h"
@@ -238,6 +239,7 @@ void update_y(OSQPSolver* solver) {
   }
 
   OSQPVectorf_plus(work->y, work->y, work->delta_y);
+  penalty_peak_zero_dual(solver);
 
 }
 
@@ -598,6 +600,9 @@ OSQPInt is_dual_infeasible(OSQPSolver* solver,
                             work->scaling->Dinv);
       }
 
+      if (work->data->penalty && work->data->penalty->peak_lower &&
+          OSQPVectorf_norm_inf(work->Pdelta_x)!=0) return 0;
+
       // Check if || P * delta_x || = 0
       if (OSQPVectorf_norm_inf(work->Pdelta_x) <
           cost_scaling * eps_dual_inf * norm_delta_x) {
@@ -610,7 +615,8 @@ OSQPInt is_dual_infeasible(OSQPSolver* solver,
         if (work->data->penalty) {
           OSQPPenaltyData* pen = work->data->penalty;
 
-          OSQPFloat rate = pen->upper1 ?
+          OSQPFloat rate = pen->peak_lower ?
+            penalty_peak_reccone(solver,work->Adelta_x,eps_dual_inf*OSQPVectorf_norm_inf(work->delta_x)) : pen->upper1 ?
             penalty_asymmetric_reccone(solver, work->Adelta_x,
               eps_dual_inf * OSQPVectorf_norm_inf(work->delta_x)) :
             OSQPVectorf_penalty_reccone_rate(work->Adelta_x,
@@ -625,7 +631,7 @@ OSQPInt is_dual_infeasible(OSQPSolver* solver,
           /* Grouped rows are skipped above, their charge being a norm over the
              whole group. Both group norms are positively homogeneous, so they
              only ever add a finite rate, never block. */
-          if ((rate < OSQP_INFTY) && pen->ngroups)
+          if ((rate < OSQP_INFTY) && pen->ngroups && !pen->peak_lower)
             rate += OSQPVectorf_group_penalty_reccone_rate(work->Adelta_x,
                                                            work->data->l, work->data->u,
                                                            pen->alpha1,
@@ -674,7 +680,8 @@ OSQPInt has_solution(const OSQPInfo* info) {
       (info->status_val != OSQP_PRIMAL_INFEASIBLE_INACCURATE) &&
       (info->status_val != OSQP_DUAL_INFEASIBLE) &&
       (info->status_val != OSQP_DUAL_INFEASIBLE_INACCURATE) &&
-      (info->status_val != OSQP_NON_CVX));
+      (info->status_val != OSQP_NON_CVX) &&
+      (info->status_val != OSQP_NUMERICAL_ERROR));
 }
 
 void store_solution(OSQPSolver *solver, OSQPSolution* solution) {
@@ -720,6 +727,13 @@ void store_solution(OSQPSolver *solver, OSQPSolution* solution) {
     OSQPVectorf_set_scalar(work->y, OSQP_NAN);
     OSQPVectorf_to_raw(solution->x, work->x); // primal
     OSQPVectorf_to_raw(solution->y, work->y); // dual
+
+    if (info->status_val==OSQP_NUMERICAL_ERROR) {
+      OSQPVectorf_set_scalar(work->delta_x,OSQP_NAN);
+      OSQPVectorf_set_scalar(work->delta_y,OSQP_NAN);
+      OSQPVectorf_to_raw(solution->prim_inf_cert,work->delta_y);
+      OSQPVectorf_to_raw(solution->dual_inf_cert,work->delta_x);
+    }
 
     // reset iterates to 0 for next run (they cannot start from NaN)
     osqp_cold_start(solver);
@@ -882,7 +896,8 @@ const char *OSQP_STATUS_MESSAGE[] = {
   "run time limit reached",
   "problem non convex",
   "interrupted",
-  "unsolved"
+  "unsolved",
+  "numerical error"
 };
 
 void update_status(OSQPInfo* info,
@@ -906,6 +921,13 @@ OSQPInt check_termination(OSQPSolver* solver,
   OSQPSettings*  settings = solver->settings;
   OSQPWorkspace* work     = solver->work;
 
+  if (work->data->penalty && work->data->penalty->peak_lower &&
+      (work->data->penalty->peak_numeric_error || !isfinite(info->obj_val) ||
+       !isfinite(info->prim_res) || !isfinite(info->dual_res))) {
+    work->data->penalty->peak_numeric_error=1;
+    penalty_peak_invalid_info(info); return 1;
+  }
+
   // Initialize variables to 0
   exitflag       = 0;
   prim_res_check = 0; dual_res_check = 0;
@@ -923,7 +945,8 @@ OSQPInt check_termination(OSQPSolver* solver,
       (info->dual_res > OSQP_INFTY)){
     // Looks like residuals are diverging. Probably the problem is non convex!
     // Terminate and report it
-    update_status(info, OSQP_NON_CVX);
+    if (work->data->penalty && work->data->penalty->peak_lower) penalty_peak_invalid_info(info);
+    else update_status(info, OSQP_NON_CVX);
     info->obj_val     = OSQP_NAN;
     info->penalty_val = OSQP_NAN;
     return 1;

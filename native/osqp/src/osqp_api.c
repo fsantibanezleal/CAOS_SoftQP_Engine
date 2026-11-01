@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 #include "glob_opts.h"
 #include "osqp.h"
 #include "auxil.h"
@@ -662,6 +663,16 @@ OSQPInt osqp_solve(OSQPSolver *solver) {
 
   work = solver->work;
   settings = solver->settings;
+  if (!penalty_peak_settings_valid(solver,settings)) {
+    OSQPInt i; penalty_peak_invalid_info(solver->info);
+    if(solver->solution) {
+      for(i=0;i<work->data->n;i++) { solver->solution->x[i]=OSQP_NAN; solver->solution->dual_inf_cert[i]=OSQP_NAN; }
+      for(i=0;i<work->data->m;i++) { solver->solution->y[i]=OSQP_NAN; solver->solution->prim_inf_cert[i]=OSQP_NAN; }
+    }
+    OSQPVectorf_set_scalar(work->x,0); OSQPVectorf_set_scalar(work->y,0); OSQPVectorf_set_scalar(work->z,0);
+    return OSQP_SETTINGS_VALIDATION_ERROR;
+  }
+
 
 #ifdef OSQP_ENABLE_PROFILING
   if (work->clear_update_time == 1)
@@ -700,6 +711,8 @@ osqp_profiler_sec_push(OSQP_PROFILER_SEC_OPT_SOLVE);
   // If not warm start -> set x, z, y to zero
   if (!settings->warm_starting) osqp_cold_start(solver);
 
+  if (work->data->penalty) work->data->penalty->peak_numeric_error=0;
+
   // Main ADMM algorithm
 
   max_iter = settings->max_iter;
@@ -731,6 +744,21 @@ osqp_profiler_sec_push(OSQP_PROFILER_SEC_OPT_SOLVE);
     solver->info->projection_time += osqp_toc(work->section_timer);
 #endif /* ifdef OSQP_ENABLE_PROFILING */
     osqp_profiler_sec_pop(OSQP_PROFILER_SEC_ADMM_PROJ);
+
+    if (work->data->penalty && work->data->penalty->peak_numeric_error) {
+      osqp_profiler_sec_pop(OSQP_PROFILER_SEC_ADMM_UPDATE);
+      osqp_profiler_sec_pop(OSQP_PROFILER_SEC_ADMM_ITER);
+      penalty_peak_invalid_info(solver->info);
+      solver->info->iter=iter;
+      store_solution(solver,solver->solution);
+      OSQPVectorf_set_scalar(work->delta_x,OSQP_NAN);
+      OSQPVectorf_set_scalar(work->delta_y,OSQP_NAN);
+      if(solver->solution) {
+        OSQPVectorf_to_raw(solver->solution->prim_inf_cert,work->delta_y);
+        OSQPVectorf_to_raw(solver->solution->dual_inf_cert,work->delta_x);
+      }
+      exitflag=OSQP_DATA_VALIDATION_ERROR; goto exit;
+    }
 
     /* Compute y^{k+1} */
     update_y(solver);
@@ -1440,6 +1468,7 @@ OSQPInt osqp_update_rho(OSQPSolver* solver,
 
     // Check if workspace has been initialized
     if (!solver || !solver->work) return osqp_error(OSQP_WORKSPACE_NOT_INIT_ERROR);
+  if (solver->work->data->penalty && solver->work->data->penalty->peak_lower) return osqp_error(OSQP_SETTINGS_VALIDATION_ERROR);
     work = solver->work;
 
   // Check value of rho
@@ -1512,6 +1541,9 @@ OSQPInt osqp_update_settings(OSQPSolver*         solver,
   /* Validate settings */
   if (validate_settings(new_settings, 0)) return osqp_error(OSQP_SETTINGS_VALIDATION_ERROR);
 
+  if (!penalty_peak_settings_valid(solver,new_settings))
+    return osqp_error(OSQP_SETTINGS_VALIDATION_ERROR);
+
   /* Update settings */
   // linsys_solver ignored
   /* allocate_solver ignored */
@@ -1568,6 +1600,9 @@ OSQPInt osqp_codegen(OSQPSolver*         solver,
                      const char*         output_dir,
                      const char*         file_prefix,
                      OSQPCodegenDefines* defines){
+  if (solver && solver->work && solver->work->data && solver->work->data->penalty &&
+      solver->work->data->penalty->peak_lower) return OSQP_FUNC_NOT_IMPLEMENTED;
+
 
   OSQPInt exitflag = 0;
 
@@ -1613,6 +1648,9 @@ OSQPInt osqp_codegen(OSQPSolver*         solver,
 OSQPInt osqp_adjoint_derivative_compute(OSQPSolver* solver,
                                         OSQPFloat*  dx,
                                         OSQPFloat*  dy) {
+  if (solver && solver->work && solver->work->data && solver->work->data->penalty &&
+      solver->work->data->penalty->peak_lower) return OSQP_FUNC_NOT_IMPLEMENTED;
+
   OSQPInt status = 0;
 
 #ifdef OSQP_ENABLE_DERIVATIVES
@@ -1630,6 +1668,9 @@ OSQPInt osqp_adjoint_derivative_compute(OSQPSolver* solver,
 OSQPInt osqp_adjoint_derivative_get_mat(OSQPSolver*    solver,
                                         OSQPCscMatrix* dP,
                                         OSQPCscMatrix* dA) {
+  if (solver && solver->work && solver->work->data && solver->work->data->penalty &&
+      solver->work->data->penalty->peak_lower) return OSQP_FUNC_NOT_IMPLEMENTED;
+
   OSQPInt status = 0;
 
 #ifdef OSQP_ENABLE_DERIVATIVES
@@ -1648,6 +1689,9 @@ OSQPInt osqp_adjoint_derivative_get_vec(OSQPSolver* solver,
                                         OSQPFloat*  dq,
                                         OSQPFloat*  dl,
                                         OSQPFloat*  du) {
+  if (solver && solver->work && solver->work->data && solver->work->data->penalty &&
+      solver->work->data->penalty->peak_lower) return OSQP_FUNC_NOT_IMPLEMENTED;
+
   OSQPInt status = 0;
 
 #ifdef OSQP_ENABLE_DERIVATIVES
