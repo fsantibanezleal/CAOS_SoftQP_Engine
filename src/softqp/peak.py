@@ -194,7 +194,7 @@ class PeakProblem:
                         if polar > a[first]:
                             factor = np.nextafter(a[first]/polar, 0) if a[first] > 0 else 0
                             repaired[rows] *= factor
-                support, conjugate = 0.0, 0.0
+                support, conjugate, local_fenchel = 0.0, 0.0, 0.0
                 for i, yi in enumerate(repaired):
                     if yi != 0:
                         endpoint = self.upper[i] if yi > 0 else self.lower[i]
@@ -202,11 +202,28 @@ class PeakProblem:
                 for g in range(len(self.groups)):
                     rows = labels == g
                     first = np.flatnonzero(rows)[0]
+                    group_conjugate = 0.0
                     if b[first] > 0:
                         polar = float(np.sum(np.maximum(repaired[rows], 0)/cu[rows]
                                              + np.maximum(-repaired[rows], 0)/cl[rows]))
                         excess = max(polar-a[first], 0)
-                        conjugate += (0.5*excess)*(excess/b[first])
+                        group_conjugate = (0.5*excess)*(excess/b[first])
+                        conjugate += group_conjugate
+                    group_support = sum(repaired[i]*(self.upper[i] if repaired[i]>0 else self.lower[i])
+                                        for i in np.flatnonzero(rows) if repaired[i]!=0)
+                    group_inner = float(repaired[rows] @ z[rows])
+                    group_cost = group_metrics[g]['penalty']
+                    local_fenchel = max(local_fenchel,
+                        abs(group_cost+group_support+group_conjugate-group_inner)/
+                        max(1, abs(group_cost), abs(group_support), abs(group_inner)))
+                # Approximate hard feasibility can make its signed gap negative.
+                # Never let it cancel a wrong subgradient in another row/group.
+                for i in np.flatnonzero(hard):
+                    if repaired[i]!=0:
+                        endpoint_product = repaired[i]*(self.upper[i] if repaired[i]>0 else self.lower[i])
+                        inner = repaired[i]*z[i]
+                        local_fenchel = max(local_fenchel, abs(endpoint_product-inner)/
+                                            max(1, abs(endpoint_product), abs(inner)))
                 repair_norm = float(np.max(np.abs(repaired-y), initial=0))
                 normalized_repair = repair_norm/max(1, float(np.max(np.abs(y), initial=0)))
                 px = self.P @ x
@@ -231,8 +248,9 @@ class PeakProblem:
                 usable = normalized_repair <= 1e-7
                 fenchel = float(penalty+support+conjugate-repaired @ z)
                 answer['approximate_fenchel_residual'] = fenchel if usable else None
-                answer['normalized_fenchel_residual'] = (
+                answer['normalized_aggregate_fenchel_residual'] = (
                     abs(fenchel)/max(1, abs(penalty), abs(support), abs(float(repaired @ z))) if usable else None)
+                answer['normalized_fenchel_residual'] = float(local_fenchel) if usable else None
         if not np.isfinite(answer['objective']):
             raise ArithmeticError("nonfinite original peak objective")
         return answer
