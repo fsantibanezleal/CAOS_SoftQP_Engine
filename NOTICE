@@ -7,3 +7,7 @@ Python binding: A2R-Lab/osqp-python at d6df7f987ba40e75bfac338ab19a97b2c92f7334.
 OSQPSlack research repository: https://github.com/A2R-Lab/OSQPSlack (MIT).
 Original notices and licenses are retained under native/.
 The namespace and reproducible local-source build are modified for SoftQP.
+
+SoftQP modifications include asymmetric projection, objective, conjugate, scaling
+and recession paths, original-space contracts, compact/asymmetric lifting adapters
+and the optional original-scale DAQP comparison. Modified files are marked.

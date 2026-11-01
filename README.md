@@ -30,3 +30,5 @@ The mathematical reference is [Schwan, Lew and Plancher (2026)](https://arxiv.or
 The asymmetric update supports the CPU builtin backend. Its derivation, sign conventions and limitations are in [penalty semantics](docs/penalty-semantics.md). `softqp.reference` preserves the authors' lifting helpers for Huber and grouped penalties, with their MIT notice.
 
 The DAQP adapter preserves original-scale side costs, exports backend settings, and refuses unsupported objectives. See [DAQP comparison](docs/daqp-comparison.md) for its positive-definite and quadratic-side restrictions.
+
+Symmetric penalties use the authors' compact signed/shared-slack lifting helper. Asymmetric penalties use explicit nonnegative lower and upper slacks. Performance comparisons must include the compact symmetric baseline rather than forcing an unnecessarily large general formulation.
