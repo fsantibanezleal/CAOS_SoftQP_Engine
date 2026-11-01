@@ -22,6 +22,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install build==1.6.1 twine==7.0.0
+      - name: Display and distribution versions agree
+        run: |
+          python -c "from pathlib import Path; import tomllib; from packaging.version import Version; display=Path('VERSION').read_text().strip(); project=tomllib.loads(Path('pyproject.toml').read_text()); assert Version(display)==Version(project['project']['version'])"
       - run: python -m build --sdist
       - run: python -m twine check dist/*
       - uses: actions/upload-artifact@v4
@@ -75,7 +78,7 @@ jobs:
       - name: Require an explicit version tag
         env:
           RELEASE_REF: ${{ github.ref }}
-        run: test "$RELEASE_REF" = refs/tags/v0.1.0
+        run: test "$RELEASE_REF" = refs/tags/v0.01.000
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*-${{ github.sha }}
