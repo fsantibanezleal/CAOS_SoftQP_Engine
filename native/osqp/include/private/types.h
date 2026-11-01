@@ -90,7 +90,7 @@ typedef struct {
   OSQPVectorf* upper2;               ///< upper-side quadratic weight, or NULL
   OSQPVectorf* peak_lower;           ///< directional peak scales; NULL for other penalties
   OSQPVectorf* peak_upper;
-  OSQPFloat peak_rho, peak_sigma;   ///< immutable metric setup snapshot
+  OSQPFloat peak_rho, peak_sigma, peak_alpha; ///< immutable metric/relaxation snapshot
   OSQPInt peak_rho_is_vec;
   OSQPInt peak_numeric_error;        ///< failed representability check; never a solution
   OSQPVectorf* delta;                ///< penalty parameter, size m

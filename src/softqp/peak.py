@@ -357,11 +357,15 @@ class PreparedPeakSolver:
         self._row_scale = np.ones(self._problem.A.shape[0])
         self.row_normalization = bool(row_normalization) if method == "native" else False
         defaults = dict(verbose=False, eps_abs=1e-8, eps_rel=1e-8, max_iter=200000,
-                        polishing=False, alpha=1.0, adaptive_rho=False, scaling=0)
+                        polishing=False, alpha=1.6, adaptive_rho=False, scaling=0)
         defaults.update(settings)
-        if method == "native" and (defaults['alpha'] != 1 or defaults['adaptive_rho']
-                                   or defaults['scaling'] or defaults['polishing']):
-            raise UnsupportedProblemError("native peaks require fixed metric, alpha=1, scaling=0 and no polishing")
+        if method == "native":
+            alpha = np.asarray(defaults['alpha'])
+            if (alpha.shape or alpha.dtype.kind not in "fi" or not np.isfinite(alpha)
+                    or not 0 < alpha < 2 or defaults['adaptive_rho']
+                    or defaults['scaling'] or defaults['polishing']):
+                raise UnsupportedProblemError("native peaks require fixed metric, finite scalar 0<alpha<2, scaling=0 and no polishing")
+            defaults['alpha'] = float(alpha)
         if method in ("epigraph-daqp", "epigraph-daqp-prox"):
             allowed = {"eps_abs", "max_iter"}
             if self._daqp_proximal:

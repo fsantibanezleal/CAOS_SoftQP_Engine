@@ -4,7 +4,7 @@
 - Include faithful proximal-point DAQP PSD/LP comparison, explicit one-shot/persistent LP policies, original-objective checks and backend-specific inexact candidates.
 - Certify small ambiguous PSD blocks exactly without a Hessian shift and validate all exposed comparator controls.
 - Add original-space group/dual diagnostics, fixed-shape warm updates and conservative hard/quadratic recession handling.
-- Restrict native peaks to fixed metric, alpha=1 and no automatic scaling/polishing; reject unsupported code generation and derivatives.
+- Support fixed finite relaxation `0<alpha<2` (default 1.6), with immutable metric/alpha and no automatic scaling/polishing; reject unsupported code generation and derivatives.
 - Correct adversarially found unit/maximal-float thresholds, settings/cache/allocation boundaries and invalid output markers.
 - Generalize validated source-archive and exact-tag release checks. Original 0.1.0 artifacts and negative experiment stay immutable; no new speed or priority claim.
 

@@ -89,7 +89,8 @@ OSQPInt osqp_setup_directional_peaks(OSQPSolver* solver, OSQPInt ngroups,
   m=solver->work->data->m;
   if (solver->work->data->penalty || ngroups<=0 || ngroups>m || m>INT_MAX/3 ||
       !group || !a || !b || !cl || !cu) return OSQP_DATA_VALIDATION_ERROR;
-  if (solver->settings->scaling || solver->settings->adaptive_rho || solver->settings->alpha!=1 ||
+  if (solver->settings->scaling || solver->settings->adaptive_rho ||
+      !isfinite(solver->settings->alpha) || solver->settings->alpha<=0 || solver->settings->alpha>=2 ||
       solver->settings->polishing || solver->settings->linsys_solver!=OSQP_DIRECT_SOLVER) return OSQP_SETTINGS_VALIDATION_ERROR;
   types=c_malloc((size_t)m*sizeof(OSQPInt)); first=c_malloc((size_t)ngroups*sizeof(OSQPInt));
   ones=c_malloc((size_t)m*sizeof(OSQPFloat)); zeros=c_calloc((size_t)m,sizeof(OSQPFloat));
@@ -122,6 +123,7 @@ OSQPInt osqp_setup_directional_peaks(OSQPSolver* solver, OSQPInt ngroups,
   OSQPVectorf_from_raw(pen->peak_lower,cl); OSQPVectorf_from_raw(pen->peak_upper,cu);
   OSQPVectorf_from_raw(pen->alpha1,a); OSQPVectorf_from_raw(pen->alpha2,b);
   pen->peak_rho=solver->settings->rho; pen->peak_sigma=solver->settings->sigma;
+  pen->peak_alpha=solver->settings->alpha;
   pen->peak_rho_is_vec=solver->settings->rho_is_vec;
 cleanup:
   c_free(types); c_free(first); c_free(ones); c_free(zeros); return status;
@@ -132,7 +134,8 @@ cleanup:
 OSQPInt penalty_peak_settings_valid(const OSQPSolver* solver,const OSQPSettings* settings) {
   OSQPPenaltyData* p=solver->work->data->penalty;
   return !p || !p->peak_lower || (!settings->scaling && !settings->adaptive_rho &&
-    settings->alpha==1 && !settings->polishing && settings->linsys_solver==OSQP_DIRECT_SOLVER &&
+    isfinite(settings->alpha) && settings->alpha==p->peak_alpha &&
+    !settings->polishing && settings->linsys_solver==OSQP_DIRECT_SOLVER &&
     settings->rho==p->peak_rho && settings->sigma==p->peak_sigma && settings->rho_is_vec==p->peak_rho_is_vec);
 }
 

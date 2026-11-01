@@ -101,7 +101,8 @@ def test_coupled_dual_budget_and_directional_scales_do_not_become_separable():
             replace(problem, groups=(group,)).validate()
 
 
-@pytest.mark.parametrize('settings', [{'alpha': 1.6}, {'scaling': 10},
+@pytest.mark.parametrize('settings', [{'alpha': value} for value in
+                                    (0, 2, -1, np.nan, np.inf, True, [1.6], 1+0j)] + [{'scaling': 10},
                                     {'adaptive_rho': True}, {'polishing': True}])
 def test_restricted_settings_are_rejected(settings):
     with pytest.raises(UnsupportedProblemError):
@@ -111,6 +112,28 @@ def test_restricted_settings_are_rejected(settings):
 def test_squared_peak_rejects_unsupported_published_native_comparator():
     with pytest.raises(UnsupportedProblemError, match='squared'):
         solve_peak(sample(quadratic=1), 'row-split-gsp')
+
+
+@pytest.mark.parametrize('alpha', [.2, 1., 1.6, 1.9])
+@pytest.mark.parametrize('quadratic', [0., .8])
+def test_fixed_relaxation_matches_independent_oracle_across_updates_and_reset(alpha, quadratic):
+    problem = sample(21, quadratic)
+    workspace = PreparedPeakSolver(problem, alpha=alpha)
+    for step in range(3):
+        current = replace(problem, q=problem.q+step*.13,
+                          lower=problem.lower-step*.02, upper=problem.upper+step*.03)
+        workspace.update(q=current.q, lower=current.lower, upper=current.upper)
+        actual = workspace.solve()
+        oracle = solve_peak(current, 'epigraph', alpha=1.6)
+        assert actual['status'] == oracle['status'] == 'solved'
+        assert actual['x'] == pytest.approx(oracle['x'], abs=3e-6)
+        assert actual['metrics']['objective'] == pytest.approx(oracle['metrics']['objective'], abs=3e-6)
+        for metric in ('hard_violation', 'normalized_stationarity',
+                       'normalized_fenchel_residual', 'normalized_dual_domain_excess'):
+            assert actual['metrics'][metric] <= 1e-6
+    workspace.reset()
+    assert workspace.solve()['x'] == pytest.approx(oracle['x'], abs=3e-6)
+    assert workspace._solver._solver.get_settings().alpha == alpha
 
 
 @pytest.mark.parametrize('linear,quadratic,expected_status', [(2., 0., 'dual infeasible'),
@@ -160,17 +183,17 @@ def test_settings_snapshot_cache_and_rejection_are_consistent():
     workspace = PreparedPeakSolver(sample())
     solver = workspace._solver
     snapshot = solver._solver.get_settings()
-    snapshot.alpha = 1.6
-    assert solver._solver.get_settings().alpha == 1
-    for request in ({'alpha': 1.6}, {'rho': 1.}, {'alpha': 1.6, 'rho': .5},
+    snapshot.alpha = 1.0
+    assert solver._solver.get_settings().alpha == 1.6
+    for request in ({'alpha': 1.0}, {'rho': 1.}, {'alpha': 1.1, 'rho': .5},
                     {'polishing': True}, {'scaling': 10}, {'adaptive_rho': True}):
         with pytest.raises(Exception):
             solver.update_settings(**request)
-        assert solver.settings.alpha == solver._solver.get_settings().alpha == 1
+        assert solver.settings.alpha == solver._solver.get_settings().alpha == 1.6
         assert solver.settings.rho == solver._solver.get_settings().rho == .1
-    solver.settings.alpha = 1.6  # A corrupted Python cache cannot poison a valid update.
+    solver.settings.alpha = 1.0  # A corrupted Python cache cannot poison a valid update.
     solver.update_settings(eps_abs=1e-9)
-    assert solver.settings.alpha == 1
+    assert solver.settings.alpha == 1.6
     assert workspace.solve()['status'] == 'solved'
 
 
