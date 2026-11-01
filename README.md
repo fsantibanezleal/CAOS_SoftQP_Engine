@@ -32,3 +32,19 @@ The asymmetric update supports the CPU builtin backend. Its derivation, sign con
 The DAQP adapter preserves original-scale side costs, exports backend settings, and refuses unsupported objectives. See [DAQP comparison](docs/daqp-comparison.md) for its positive-definite and quadratic-side restrictions.
 
 Symmetric penalties use the authors' compact signed/shared-slack lifting helper. Asymmetric penalties use explicit nonnegative lower and upper slacks. Performance comparisons must include the compact symmetric baseline rather than forcing an unnecessarily large general formulation.
+
+## Repeated vector updates
+
+```python
+from softqp.sessions import PreparedSolver
+workspace = PreparedSolver(problem, method="asymmetric")
+first = workspace.solve()
+workspace.update(q=next_q, lower=next_lower, upper=next_upper)
+next_result = workspace.solve()
+```
+
+The workspace owns a copy of the input problem. Matrices, hard/soft row policy, side coefficients and finite-side pattern remain fixed. Invalid updates are rejected before the native workspace changes. `problem` returns a copy for inspection, and `reset()` zeros warm iterates while keeping the factorization. Generalized and compact lifted workspaces are also available; lifted workspaces default to the same native backend, with `reference_backend="stock"` for independent checking.
+
+`setup_wall_seconds` includes initial validation and assembly; `update_wall_seconds` includes validation and vector construction. The returned native setup/solve timers keep their backend meaning. A session's `elapsed_seconds` measures that solve call including original-space evaluation, whereas cold `solve()` retains its documented timing scope. A benchmark must time its full declared operation explicitly and never sum repeated initial setup fields as if every stream step created a solver. Warm-state reuse does not guarantee a runtime gain.
+
+`DaqpWorkspace` in `softqp.sessions` uses DAQP 0.10.3's documented vector update API without resending sense flags, preserving its active state. It retains original-scale side weights, hard-row policy, finite-side pattern and hard equality classification. Random mixed-row streams match independent cold lifting. It provides the same setup/update wall timers as the native workspace, so a comparison need not handicap DAQP by rebuilding it at every frame.

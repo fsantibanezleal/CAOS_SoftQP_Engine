@@ -11,6 +11,52 @@ class UnsupportedProblemError(ValueError):
     """The declared objective is outside a method's supported formulation."""
 
 
+def _setup_native(problem, method, defaults):
+    p = problem.penalty
+    m = problem.lower.size
+    if method == "generalized" and not (
+        np.array_equal(p.lower_linear, p.upper_linear)
+        and np.array_equal(p.lower_quadratic, p.upper_quadratic)
+    ):
+        raise UnsupportedProblemError(
+            "generalized method requires symmetric penalties; use lifted for side-specific costs"
+        )
+    from .interface import OSQP, PenaltyType
+
+    solver = OSQP()
+    solver.setup(
+        sparse.triu(problem.P, format="csc"),
+        problem.q,
+        problem.A,
+        problem.lower,
+        problem.upper,
+        **defaults,
+    )
+    types = np.where(
+        p.soft,
+        int(PenaltyType.OSQP_PENALTY_L1L2),
+        int(PenaltyType.OSQP_PENALTY_NONE),
+    ).astype(np.int32)
+    if m == 0:
+        pass
+    elif method == "asymmetric":
+        solver._solver.setup_asymmetric_penalty(
+            types,
+            *[
+                np.ascontiguousarray(a, dtype=np.float64)
+                for a in (
+                    p.lower_linear,
+                    p.lower_quadratic,
+                    p.upper_linear,
+                    p.upper_quadratic,
+                )
+            ],
+        )
+    else:
+        solver.setup_penalty(types, alpha1=p.lower_linear, alpha2=p.lower_quadratic)
+    return solver
+
+
 def solve(
     problem: Problem, method="generalized", *, reference_backend="stock", **settings
 ):
@@ -22,50 +68,10 @@ def solve(
         verbose=False, eps_abs=1e-7, eps_rel=1e-7, max_iter=100000, polishing=False
     )
     defaults.update(settings)
-    p = problem.penalty
     n = problem.q.size
     m = problem.lower.size
     if method in ("generalized", "asymmetric"):
-        if method == "generalized" and not (
-            np.array_equal(p.lower_linear, p.upper_linear)
-            and np.array_equal(p.lower_quadratic, p.upper_quadratic)
-        ):
-            raise UnsupportedProblemError(
-                "generalized method requires symmetric penalties; use lifted for side-specific costs"
-            )
-        from .interface import OSQP, PenaltyType
-
-        solver = OSQP()
-        solver.setup(
-            sparse.triu(problem.P, format="csc"),
-            problem.q,
-            problem.A,
-            problem.lower,
-            problem.upper,
-            **defaults,
-        )
-        types = np.where(
-            p.soft,
-            int(PenaltyType.OSQP_PENALTY_L1L2),
-            int(PenaltyType.OSQP_PENALTY_NONE),
-        ).astype(np.int32)
-        if m == 0:
-            pass
-        elif method == "asymmetric":
-            solver._solver.setup_asymmetric_penalty(
-                types,
-                *[
-                    np.ascontiguousarray(a, dtype=np.float64)
-                    for a in (
-                        p.lower_linear,
-                        p.lower_quadratic,
-                        p.upper_linear,
-                        p.upper_quadratic,
-                    )
-                ],
-            )
-        else:
-            solver.setup_penalty(types, alpha1=p.lower_linear, alpha2=p.lower_quadratic)
+        solver = _setup_native(problem, method, defaults)
         result = solver.solve()
         x, y = result.x, result.y
         dimensions = dict(variables=n, rows=m, nnz=problem.P.nnz + problem.A.nnz)
@@ -79,37 +85,21 @@ def solve(
 
             solver_class = OSQP
 
-        A = sparse.csc_matrix(problem.A)
-        symmetric = np.array_equal(p.lower_linear, p.upper_linear) and np.array_equal(
-            p.lower_quadratic, p.upper_quadratic
-        )
-        if symmetric:
-            from .reference import Penalty as ReferencePenalty, lift, L1L2
+        from .lifting import lift_problem
 
-            reference = ReferencePenalty.hard(m)
-            reference.type[p.soft] = L1L2
-            reference.alpha1[:] = p.lower_linear
-            reference.alpha2[:] = p.lower_quadratic
-            P1, q1, A1, l1, u1 = lift(
-                problem.P, problem.q, A, problem.lower, problem.upper, reference
-            )
-            solver = solver_class()
-            solver.setup(sparse.triu(P1, format="csc"), q1, A1, l1, u1, **defaults)
-            result = solver.solve()
-            x = result.x[:n]
-            y = result.y[:m].copy()
-            relaxed = p.soft & (p.lower_linear != 0)
-            extra = np.flatnonzero(
-                relaxed
-                & (np.isfinite(problem.upper) | ~np.isfinite(problem.lower))
-                & np.isfinite(problem.lower)
-            )
-            np.add.at(y, extra, result.y[m : m + extra.size])
-            dimensions = dict(
-                variables=P1.shape[0], rows=A1.shape[0], nnz=P1.nnz + A1.nnz
-            )
-        else:
-            result, x, y, dimensions = _lift_asymmetric(problem, defaults, solver_class)
+        lifted = lift_problem(problem)
+        solver = solver_class()
+        solver.setup(
+            sparse.triu(lifted.P, format="csc"),
+            lifted.q,
+            lifted.A,
+            lifted.lower,
+            lifted.upper,
+            **defaults,
+        )
+        result = solver.solve()
+        x, y = lifted.recover(result.x, result.y)
+        dimensions = lifted.dimensions
     elif method == "daqp":
         result, x, y, dimensions, backend_settings = _solve_daqp(problem, defaults)
     else:
@@ -138,70 +128,7 @@ def solve(
     return output
 
 
-def _lift_asymmetric(problem, defaults, solver_class):
-    p = problem.penalty
-    n = problem.q.size
-    m = problem.lower.size
-    A = sparse.csc_matrix(problem.A)
-    rows, columns, values = [], [], []
-    linear, quadratic, lower, upper, original_rows = [], [], [], [], []
-    # Two nonnegative slack variables for a two-sided soft row; finite sides only.
-    for i in range(m):
-        if not p.soft[i]:
-            out = len(lower)
-            a = A.getrow(i)
-            rows.extend([out] * a.nnz)
-            columns.extend(a.indices)
-            values.extend(a.data)
-            lower.append(problem.lower[i])
-            upper.append(problem.upper[i])
-            original_rows.append(i)
-            continue
-        for sign, bound, c, d in (
-            (1.0, problem.lower[i], p.lower_linear[i], p.lower_quadratic[i]),
-            (-1.0, problem.upper[i], p.upper_linear[i], p.upper_quadratic[i]),
-        ):
-            if not np.isfinite(bound):
-                continue
-            j = len(linear)
-            out = len(lower)
-            a = A.getrow(i)
-            rows.extend([out] * a.nnz + [out])
-            columns.extend(list(a.indices) + [n + j])
-            values.extend(list(a.data) + [sign])
-            lower.append(bound if sign > 0 else -np.inf)
-            upper.append(np.inf if sign > 0 else bound)
-            original_rows.append(i)
-            linear.append(c)
-            quadratic.append(d)
-    k = len(linear)
-    B = sparse.coo_matrix((values, (rows, columns)), shape=(len(lower), n + k)).tocsc()
-    main_rows = len(lower)
-    B = sparse.vstack(
-        [B, sparse.hstack([sparse.csc_matrix((k, n)), sparse.eye(k)])], format="csc"
-    )
-    P = sparse.block_diag(
-        [problem.P, sparse.diags(quadratic) if k else sparse.csc_matrix((0, 0))],
-        format="csc",
-    )
-    solver = solver_class()
-    solver.setup(
-        sparse.triu(P, format="csc"),
-        np.r_[problem.q, linear],
-        B,
-        np.r_[lower, np.zeros(k)],
-        np.r_[upper, np.full(k, np.inf)],
-        **defaults,
-    )
-    result = solver.solve()
-    x = result.x[:n]
-    y = np.zeros(m)
-    np.add.at(y, original_rows, result.y[:main_rows])
-    dimensions = dict(variables=n + k, rows=B.shape[0], nnz=P.nnz + B.nnz)
-    return result, x, y, dimensions
-
-
-def _solve_daqp(problem, defaults):
+def _setup_daqp(problem, defaults):
     p = problem.penalty
     n = problem.q.size
     m = problem.lower.size
@@ -261,6 +188,17 @@ def _solve_daqp(problem, defaults):
         model.soft_weights(
             rho_l=rho_l, rho_u=rho_u, w_l=p.lower_linear, w_u=p.upper_linear
         )
+    return model, setup_seconds
+
+
+def _solve_daqp(problem, defaults):
+    model, setup_seconds = _setup_daqp(problem, defaults)
+    return _read_daqp(problem, model, setup_seconds)
+
+
+def _read_daqp(problem, model, setup_seconds):
+    n = problem.q.size
+    m = problem.lower.size
     x, _, flag, info = model.solve()
     y = np.asarray(info["lam"])
     result = SimpleNamespace(
