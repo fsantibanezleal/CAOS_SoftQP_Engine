@@ -6,7 +6,7 @@ The implementation supports the published generalized projection method and a ca
 
 ## Install from source
 
-Python 3.10 or newer, a C/C++ compiler, and CMake are required.
+Version 0.1.0 targets CPython 3.12, Windows x64 and Linux x86_64. A C/C++ compiler and CMake are required for source installation. Portable wheels and clean installed tests are prepared by the [release workflow](docs/releasing.md); public package publication remains a separate gate.
 
 ```bash
 python -m pip install .

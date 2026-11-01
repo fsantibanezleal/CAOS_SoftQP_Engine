@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import subprocess
 import sys
+import tempfile
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
 import pybind11
@@ -14,8 +15,12 @@ ROOT = Path(__file__).parent.resolve()
 class CMakeBuild(build_ext):
     def build_extension(self, ext):
         output = Path(self.get_ext_fullpath(ext.name)).parent.resolve()
-        build = Path(self.build_temp).resolve() / ext.name
-        build.mkdir(parents=True, exist_ok=True)
+        # A pip source checkout can already have a long path. Nesting MSBuild's
+        # compiler checks below build_temp can exceed Windows' 260-character limit.
+        with tempfile.TemporaryDirectory(prefix="softqp-build-") as temporary:
+            self._cmake_extension(ext, output, Path(temporary))
+
+    def _cmake_extension(self, ext, output, build):
         config = "Debug" if self.debug else "Release"
         args = [
             f"-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={output}",
