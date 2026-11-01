@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 import numpy as np
 import pytest
 from scipy import sparse
@@ -20,6 +21,7 @@ def test_flex_paper_reconstruction_matches_scalar_exact_penalty(target, weight):
     )
     result = solve_flex(problem, eps_abs=1e-9, eps_rel=1e-9)
     oracle = solve(problem, "lifted", eps_abs=1e-9, eps_rel=1e-9)
+    json.dumps(result, allow_nan=False)
     assert result["status_code"] == 1
     assert result["x"] == pytest.approx(oracle["x"], abs=3e-6)
     assert result["metrics"]["objective"] == pytest.approx(
@@ -44,6 +46,7 @@ def test_flex_weighted_sides_match_independent_lifting(seed):
     )
     result = solve_flex(problem)
     oracle = solve(problem, "lifted", eps_abs=1e-9, eps_rel=1e-9)
+    json.dumps(result, allow_nan=False)
     assert result["status_code"] == 1
     assert result["metrics"]["objective"] == pytest.approx(
         oracle["metrics"]["objective"], abs=2e-6

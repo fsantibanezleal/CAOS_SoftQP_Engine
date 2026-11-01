@@ -171,7 +171,7 @@ class FlexWorkspace:
             dimensions=dict(
                 variables=p.q.size + 2 * k,
                 rows=2 * k,
-                nnz=p.P.nnz + 2 * np.count_nonzero(self.G) + 2 * k,
+                nnz=int(p.P.nnz + 2 * np.count_nonzero(self.G) + 2 * k),
             ),
             iterations=iteration,
             setup_seconds=self.setup_seconds,
