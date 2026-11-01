@@ -7,6 +7,9 @@ from scipy import sparse
 from .problem import Problem
 
 
+DAQP_CANDIDATE_FLAGS = (1, 2, 4, 5)
+
+
 class UnsupportedProblemError(ValueError):
     """The declared objective is outside a method's supported formulation."""
 
@@ -105,7 +108,8 @@ def solve(
     else:
         raise ValueError(f"unknown method: {method}")
     elapsed = time.perf_counter() - start
-    metrics = problem.evaluate(x) if result.info.status_val in (1, 2) else None
+    candidate_flags = DAQP_CANDIDATE_FLAGS if method == "daqp" else (1, 2)
+    metrics = problem.evaluate(x) if result.info.status_val in candidate_flags else None
     if metrics is not None:
         metrics["stationarity_residual"] = float(
             np.max(np.abs(problem.P @ x + problem.q + problem.A.T @ y), initial=0.0)
@@ -128,10 +132,35 @@ def solve(
     return output
 
 
-def _setup_daqp(problem, defaults):
+def _daqp_controls(defaults, *, proximal=False):
+    for name in ("eps_abs", "eps_rel"):
+        value = np.asarray(defaults[name])
+        if value.shape or value.dtype.kind not in "fi" or not np.isfinite(value) or value < 0:
+            raise ValueError(f"DAQP {name} must be finite and nonnegative")
+    if defaults["eps_abs"] <= 0:
+        raise ValueError("DAQP eps_abs must be strictly positive")
+    limit = np.asarray(defaults["max_iter"])
+    if limit.shape or limit.dtype.kind not in "iu" or limit <= 0 or limit > np.iinfo(np.intc).max:
+        raise ValueError("DAQP max_iter must be a positive C integer")
+    controls = dict(primal_tol=float(defaults["eps_abs"]), dual_tol=float(defaults["eps_abs"]),
+                    iter_limit=int(limit), w_soft=0., eps_prox=0.)
+    if proximal:
+        eps, eta = defaults.get("eps_prox", -1e-6), defaults.get("eta_prox", -1.)
+        for value in (eps, eta):
+            candidate = np.asarray(value)
+            if candidate.shape or candidate.dtype.kind not in "fi" or not np.isfinite(candidate):
+                raise ValueError("proximal DAQP controls must be finite numeric scalars")
+        if eps == 0:
+            raise ValueError("proximal DAQP requires nonzero eps_prox")
+        controls.update(eps_prox=float(eps), eta_prox=float(eta))
+    return controls
+
+
+def _setup_daqp(problem, defaults, *, proximal=False):
     p = problem.penalty
     n = problem.q.size
     m = problem.lower.size
+    controls = _daqp_controls(defaults, proximal=proximal)
     import daqp
 
     if n > 2048 or m > 8192:
@@ -139,12 +168,20 @@ def _setup_daqp(problem, defaults):
             "DAQP dense reference exceeds its declared 2048-variable / 8192-row budget"
         )
     H = np.ascontiguousarray(problem.P.toarray(), dtype=np.float64)
-    try:
-        np.linalg.cholesky(H)
-    except np.linalg.LinAlgError as error:
-        raise UnsupportedProblemError(
-            "DAQP reference requires positive definite P; no regularization is inserted"
-        ) from error
+    if proximal:
+        if np.any(p.soft):
+            raise UnsupportedProblemError("proximal DAQP adapter requires an explicit hard epigraph")
+        eps_prox = defaults.get("eps_prox", -1e-6)
+        eta_prox = defaults.get("eta_prox", -1.0)
+        if not np.isfinite(eps_prox) or eps_prox == 0 or not np.isfinite(eta_prox):
+            raise ValueError("proximal DAQP requires nonzero finite eps_prox and finite eta_prox")
+    else:
+        try:
+            np.linalg.cholesky(H)
+        except np.linalg.LinAlgError as error:
+            raise UnsupportedProblemError(
+                "DAQP reference requires positive definite P; no regularization is inserted"
+            ) from error
     if np.any(p.soft & np.isfinite(problem.lower) & (p.lower_quadratic <= 0)) or np.any(
         p.soft & np.isfinite(problem.upper) & (p.upper_quadratic <= 0)
     ):
@@ -152,13 +189,7 @@ def _setup_daqp(problem, defaults):
             "DAQP reference requires positive quadratic cost on each finite soft side"
         )
     model = daqp.Model()
-    model.settings = dict(
-        primal_tol=defaults["eps_abs"],
-        dual_tol=defaults["eps_abs"],
-        iter_limit=defaults["max_iter"],
-        w_soft=0.0,
-        eps_prox=0.0,
-    )
+    model.settings = controls
     sense = np.where(p.soft, 8, np.where(problem.lower == problem.upper, 5, 0)).astype(
         np.intc
     )
@@ -203,11 +234,12 @@ def _read_daqp(problem, model, setup_seconds):
     y = np.asarray(info["lam"])
     result = SimpleNamespace(
         info=SimpleNamespace(
-            status={1: "optimal", 2: "soft optimal"}.get(flag, f"DAQP status {flag}"),
+            status={1: "optimal", 2: "soft optimal", 4: "optimal inexact", 5: "feasible"}.get(flag, f"DAQP status {flag}"),
             status_val=flag,
             iter=info["iterations"],
             setup_time=setup_seconds,
             solve_time=info["solve_time"],
+            proximal_iterations=int(info.get("nodes", 0)),
         )
     )
     dimensions = dict(variables=n, rows=m, nnz=problem.P.nnz + problem.A.nnz)

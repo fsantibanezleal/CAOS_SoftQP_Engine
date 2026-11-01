@@ -1,6 +1,8 @@
 # 0.02.000 / distribution 0.2.0 (unreleased)
 
 - Add original-row directional coupled peak updates, compact stock-OSQP epigraph, existing symmetric row-split GSP and ordinary hard-epigraph DAQP comparisons.
+- Include faithful proximal-point DAQP PSD/LP comparison, explicit one-shot/persistent LP policies, original-objective checks and backend-specific inexact candidates.
+- Certify small ambiguous PSD blocks exactly without a Hessian shift and validate all exposed comparator controls.
 - Add original-space group/dual diagnostics, fixed-shape warm updates and conservative hard/quadratic recession handling.
 - Restrict native peaks to fixed metric, alpha=1 and no automatic scaling/polishing; reject unsupported code generation and derivatives.
 - Correct adversarially found unit/maximal-float thresholds, settings/cache/allocation boundaries and invalid output markers.

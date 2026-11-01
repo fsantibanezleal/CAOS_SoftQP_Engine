@@ -296,3 +296,117 @@ def test_transformed_bound_overflow_rejects_before_mutating_a_reference_workspac
         with pytest.raises((ValueError, FloatingPointError)):
             workspace.update(upper=np.array([1e20]))
         assert workspace.problem.upper[0] == 0
+
+
+@pytest.mark.parametrize('curvature', ['positive-definite', 'semidefinite', 'linear-program'])
+@pytest.mark.parametrize('quadratic', [0., .8])
+@pytest.mark.parametrize('eps_prox', [-1e-6, 1.])
+def test_proximal_daqp_optimizes_the_original_psd_epigraph_not_a_shifted_hessian(curvature, quadratic, eps_prox):
+    problem = sample(23, quadratic)
+    diagonal = (np.ones(5) if curvature == 'positive-definite' else
+                np.array([1., 1., 0., 0., 0.]) if curvature == 'semidefinite' else np.zeros(5))
+    problem = replace(problem, P=sparse.diags(diagonal, format='csc'),
+                      A=sparse.vstack([problem.A, sparse.eye(5, format='csc')[2:]], format='csc'),
+                      lower=np.r_[problem.lower, np.full(3, -2.)],
+                      upper=np.r_[problem.upper, np.full(3, 2.)])
+    original_hessian = problem.P.copy()
+    workspace = PreparedPeakSolver(problem, 'epigraph-daqp-prox', eps_prox=eps_prox, eta_prox=1e-10)
+    for step in range(3):
+        updated = replace(problem, q=problem.q+step*.1)
+        workspace.update(q=updated.q)
+        actual, oracle = workspace.solve(), solve_peak(updated, 'epigraph')
+        assert actual['status_code'] == 1
+        assert actual['metrics']['objective'] == pytest.approx(oracle['metrics']['objective'], abs=3e-6)
+        assert actual['metrics']['hard_violation'] <= 1e-6
+        assert actual['metrics']['normalized_stationarity'] <= 1e-6
+        assert actual['metrics']['normalized_fenchel_residual'] <= 1e-6
+        assert actual['backend_settings']['eps_prox'] == eps_prox
+        assert actual['proximal_iterations'] >= 1
+        assert (problem.P != original_hessian).nnz == 0
+    workspace.reset()
+    assert workspace.solve()['metrics']['objective'] == pytest.approx(actual['metrics']['objective'], abs=3e-6)
+    assert workspace.reset_refactorized == (not actual['one_shot_lp'])
+
+
+@pytest.mark.parametrize('settings', [{'eps_prox': 0.}, {'eps_prox': np.nan}, {'eta_prox': np.inf}])
+def test_proximal_daqp_label_rejects_disabled_or_nonfinite_proximal_controls(settings):
+    with pytest.raises(ValueError, match='proximal DAQP'):
+        PreparedPeakSolver(sample(), 'epigraph-daqp-prox', **settings)
+
+
+@pytest.mark.parametrize('settings', [{'eps_abs': -1}, {'eps_abs': 0}, {'eps_abs': np.nan},
+                                    {'eps_rel': np.nan}, {'max_iter': 0}, {'max_iter': 1.5},
+                                    {'max_iter': False}, {'max_iter': np.inf}])
+def test_all_exposed_daqp_controls_are_validated_before_backend_mutation(settings):
+    for method in ('epigraph-daqp', 'epigraph-daqp-prox'):
+        with pytest.raises(ValueError):
+            PreparedPeakSolver(sample(quadratic=.8), method, **settings)
+
+
+def test_exact_dyadic_psd_fallback_accepts_rank_one_but_rejects_true_tiny_negative_curvature():
+    v = np.array([1., 2., 3.])
+    P = np.outer(v, v)
+    problem = PeakProblem(sparse.csc_matrix(P), np.array([-1., .5, 2.]),
+                          sparse.vstack([sparse.eye(3), sparse.eye(3)], format='csc'),
+                          np.r_[np.full(3, -2.), np.zeros(3)], np.r_[np.full(3, 2.), np.zeros(3)],
+                          (PeakGroup([3, 4, 5], linear=.3, quadratic=.8),))
+    problem.validate()
+    for method in ('native', 'epigraph-daqp-prox'):
+        actual, oracle = solve_peak(problem, method), solve_peak(problem, 'epigraph')
+        assert actual['status_code'] == 1
+        assert actual['metrics']['objective'] == pytest.approx(oracle['metrics']['objective'], abs=3e-6)
+        assert actual['metrics']['normalized_stationarity'] <= 1e-6
+    assert np.array_equal(problem.P.toarray(), P)
+    bad = P.copy()
+    bad[2, 2] = np.nextafter(bad[2, 2], 0)
+    with pytest.raises(ValueError, match='semidefinite'):
+        replace(problem, P=sparse.csc_matrix(bad)).validate()
+    blocks = sparse.block_diag([sparse.csc_matrix(P)]*20, format='csc')
+    PeakProblem(blocks, np.zeros(60), sparse.csc_matrix((0, 60)), np.empty(0), np.empty(0), ()).validate()
+    large = np.outer(np.arange(1., 34.), np.arange(1., 34.))
+    with pytest.raises(UnsupportedProblemError, match='budget'):
+        PeakProblem(sparse.csc_matrix(large), np.zeros(33), sparse.csc_matrix((0, 33)),
+                    np.empty(0), np.empty(0), ()).validate()
+
+
+@pytest.mark.parametrize('lp_mode', ['one-shot', 'model'])
+def test_pinned_lp_api_policy_is_explicit_and_bounded_lp_keeps_original_objective(lp_mode):
+    problem = PeakProblem(sparse.csc_matrix((1, 1)), np.array([-2.]), sparse.csc_matrix([[1.], [1.]]),
+                          np.array([-2., 0.]), np.array([2., 0.]), (PeakGroup([1]),))
+    workspace = PreparedPeakSolver(problem, 'epigraph-daqp-prox', lp_mode=lp_mode)
+    result = workspace.solve()
+    assert result['status_code'] == 1 and result['x'] == pytest.approx([2.], abs=1e-6)
+    assert result['metrics']['objective'] == pytest.approx(-2., abs=1e-6)
+    assert result['one_shot_lp'] == (lp_mode == 'one-shot')
+    assert result['workspace_reused'] == (lp_mode == 'model')
+    workspace.update(q=np.array([-3.]))
+    assert workspace.solve()['metrics']['objective'] == pytest.approx(-4., abs=1e-6)
+    workspace.reset()
+    assert workspace.reset_refactorized == (lp_mode == 'model')
+
+
+def test_true_unbounded_lp_uses_the_documented_one_shot_path_without_false_candidate():
+    problem = PeakProblem(sparse.csc_matrix((1, 1)), np.array([-2.]), sparse.csc_matrix([[1.]]),
+                          np.zeros(1), np.zeros(1), (PeakGroup([0]),))
+    result = solve_peak(problem, 'epigraph-daqp-prox', max_iter=200)
+    assert result['status_code'] == -3
+    assert result['x'] is None and result['metrics'] is None
+    limited = solve_peak(problem, 'epigraph-daqp-prox', lp_mode='model', max_iter=200)
+    assert limited['status_code'] in (-3, -4)
+    assert limited['x'] is None
+
+
+def test_daqp_inexact_status_is_a_candidate_for_accuracy_checks_not_osqp_infeasibility(monkeypatch):
+    import softqp.solvers as solvers
+    original = solvers._read_daqp
+
+    def inexact(*args, **kwargs):
+        result, x, y, dimensions, settings = original(*args, **kwargs)
+        assert result.info.status_val == 1
+        result.info.status_val, result.info.status = 4, 'optimal inexact'
+        return result, x, y, dimensions, settings
+
+    monkeypatch.setattr(solvers, '_read_daqp', inexact)
+    result = solve_peak(sample(quadratic=.8), 'epigraph-daqp-prox')
+    assert result['status_code'] == 4 and result['inexact_candidate']
+    assert result['x'] is not None and result['metrics']['normalized_stationarity'] <= 1e-6

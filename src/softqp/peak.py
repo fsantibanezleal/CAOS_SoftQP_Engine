@@ -7,6 +7,7 @@ no priority, runtime or controller-safety claim. Disjoint groups only.
 import copy
 from dataclasses import dataclass, replace
 import time
+from types import SimpleNamespace
 
 import numpy as np
 from scipy import sparse
@@ -33,6 +34,56 @@ def _vector(value, size, name, *, positive=False, scalar=False):
     return a.astype(np.float64, copy=True)
 
 
+def _certify_psd(matrix):
+    # Never turn a genuinely negative curvature into a PSD model by shifting H.
+    diagonal = matrix.diagonal()
+    if np.any(diagonal < 0):
+        raise ValueError("peak Hessian must be positive semidefinite")
+    difference = matrix-matrix.T
+    difference.eliminate_zeros()
+    if difference.nnz:
+        raise ValueError("peak Hessian must be symmetric")
+    off_diagonal = matrix-sparse.diags(diagonal)
+    off_diagonal.eliminate_zeros()
+    if not off_diagonal.nnz:
+        return
+    n = matrix.shape[0]
+    magnitude = float(sparse.linalg.norm(matrix, ord=np.inf))
+    if not np.isfinite(magnitude):
+        raise UnsupportedProblemError("PSD numerical scale is not representable")
+    try:
+        minimum = (np.linalg.eigvalsh(matrix.toarray())[0] if n <= 128 else
+                   sparse.linalg.eigsh(matrix, k=1, which="SA", return_eigenvectors=False)[0])
+    except (np.linalg.LinAlgError, sparse.linalg.ArpackError) as error:
+        raise UnsupportedProblemError("PSD numerical certification did not converge") from error
+    margin = 64*n*np.finfo(float).eps*magnitude
+    if minimum > margin:
+        return
+    if minimum < -margin:
+        raise ValueError("peak Hessian must be positive semidefinite")
+    if n > 32:
+        count, labels = sparse.csgraph.connected_components(off_diagonal, directed=False)
+        if count > 1 and max(np.bincount(labels)) <= 32:
+            for component in range(count):
+                indices = np.flatnonzero(labels == component)
+                _certify_psd(matrix[indices][:, indices])
+            return
+        raise UnsupportedProblemError("numerically ambiguous coupled PSD block exceeds the exact 32-variable budget")
+    # Floats are exact dyadic rationals. This bounded Schur test proves PSD of
+    # the submitted float64 matrix, including singular non-diagonal matrices.
+    from fractions import Fraction
+    exact = [[Fraction.from_float(float(value)) for value in row] for row in matrix.toarray()]
+    for k in range(n):
+        pivot = exact[k][k]
+        if pivot < 0 or (pivot == 0 and any(exact[i][k] for i in range(k+1, n))):
+            raise ValueError("peak Hessian must be positive semidefinite; exact negative curvature detected")
+        if pivot > 0:
+            for i in range(k+1, n):
+                for j in range(i, n):
+                    exact[j][i] -= exact[i][k]*exact[j][k]/pivot
+                    exact[i][j] = exact[j][i]
+
+
 @dataclass(frozen=True)
 class PeakGroup:
     rows: object
@@ -52,12 +103,24 @@ class PeakProblem:
     groups: tuple[PeakGroup, ...]
 
     def validate(self):
-        Problem(self.P, self.q, self.A, self.lower, self.upper,
-                Penalty.uniform(self.A.shape[0], soft=False)).validate()
-        minimum = (np.linalg.eigvalsh(self.P.toarray())[0] if self.P.shape[0] <= 128
-                   else sparse.linalg.eigsh(self.P, k=1, which="SA", return_eigenvectors=False)[0])
-        if minimum < 0:
-            raise ValueError("peak Hessian must be positive semidefinite; tiny negative curvature is not regularized")
+        if not sparse.issparse(self.P) or not sparse.issparse(self.A):
+            raise ValueError("P and A must be sparse real matrices")
+        n, m = self.P.shape[0], self.A.shape[0]
+        if n <= 0 or self.P.shape != (n, n) or self.A.shape[1] != n:
+            raise ValueError("invalid nonempty QP dimensions")
+        for matrix in (self.P, self.A):
+            if matrix.dtype.kind not in "fi" or not np.isfinite(matrix.data).all():
+                raise ValueError("P and A must be finite real matrices")
+        if not all(isinstance(value, np.ndarray) for value in (self.q, self.lower, self.upper)):
+            raise ValueError("q and bound vectors must be NumPy arrays")
+        _vector(self.q, n, "q")
+        for bound in (self.lower, self.upper):
+            a = np.asarray(bound)
+            if a.shape != (m,) or a.dtype.kind not in "fi" or np.isnan(a).any():
+                raise ValueError("invalid interval vectors")
+        if np.any(self.lower > self.upper) or np.isposinf(self.lower).any() or np.isneginf(self.upper).any():
+            raise ValueError("invalid interval endpoints")
+        _certify_psd(sparse.csc_matrix(self.P))
         self.layout()
 
     def layout(self):
@@ -259,17 +322,35 @@ def _native_bounds(lower, upper):
             raise UnsupportedProblemError("finite bounds exceed the native sentinel-safe range")
 
 
+def _read_daqp_lp(problem, defaults):
+    # Pinned Model.setup(None) has a documented/implemented dimensionality gap.
+    # The published one-shot H=None API reaches DAQP's actual LP path.
+    import daqp
+    from .solvers import _daqp_controls
+    controls = _daqp_controls(defaults, proximal=True)
+    x, _, flag, info = daqp.solve(None, np.ascontiguousarray(problem.q),
+                                 np.ascontiguousarray(problem.A.toarray()),
+                                 np.ascontiguousarray(problem.upper), np.ascontiguousarray(problem.lower),
+                                 np.where(problem.lower == problem.upper, 5, 0).astype(np.intc), **controls)
+    status = {1: "optimal", 2: "soft optimal", 4: "optimal inexact", 5: "feasible"}.get(flag, f"DAQP status {flag}")
+    result = SimpleNamespace(info=SimpleNamespace(status=status, status_val=flag,
+                             iter=info['iterations'], setup_time=info['setup_time'],
+                             solve_time=info['solve_time'], proximal_iterations=int(info.get('nodes', 0))))
+    return result, np.asarray(x), np.asarray(info['lam']), dict(controls, lp_hessian='None')
+
+
 class PreparedPeakSolver:
     """Owned fixed-shape workspace with validated atomic vector updates."""
 
     def __init__(self, problem, method="native", *, row_normalization=True, **settings):
         start = time.perf_counter()
-        if method not in ("native", "epigraph", "row-split-gsp", "epigraph-daqp"):
-            raise ValueError("method must be native, epigraph, row-split-gsp or epigraph-daqp")
+        if method not in ("native", "epigraph", "row-split-gsp", "epigraph-daqp", "epigraph-daqp-prox"):
+            raise ValueError("method must be native, epigraph, row-split-gsp, epigraph-daqp or epigraph-daqp-prox")
         self._problem = copy.deepcopy(problem)
         self._problem.validate()
         _native_bounds(self._problem.lower, self._problem.upper)
         self.method = method
+        self._daqp_proximal = method == "epigraph-daqp-prox"
         if not isinstance(row_normalization, (bool, np.bool_)):
             raise ValueError("row_normalization must be boolean")
         self._assembly = None
@@ -281,15 +362,21 @@ class PreparedPeakSolver:
         if method == "native" and (defaults['alpha'] != 1 or defaults['adaptive_rho']
                                    or defaults['scaling'] or defaults['polishing']):
             raise UnsupportedProblemError("native peaks require fixed metric, alpha=1, scaling=0 and no polishing")
-        if method == "epigraph-daqp":
-            if set(settings) - {"eps_abs", "eps_rel", "max_iter"}:
-                raise UnsupportedProblemError("epigraph DAQP accepts eps_abs, eps_rel and max_iter controls")
-            from .solvers import _setup_daqp
+        if method in ("epigraph-daqp", "epigraph-daqp-prox"):
+            allowed = {"eps_abs", "max_iter"}
+            if self._daqp_proximal:
+                allowed |= {"eps_prox", "eta_prox", "lp_mode"}
+            if set(settings) - allowed:
+                raise UnsupportedProblemError("DAQP uses absolute eps_abs, not eps_rel; accepted controls are eps_abs, max_iter and declared proximal/LP controls")
+            from .solvers import _setup_daqp, _daqp_controls
+            _daqp_controls(defaults, proximal=self._daqp_proximal)
+            if self._daqp_proximal and defaults.get("lp_mode", "one-shot") not in ("one-shot", "model"):
+                raise ValueError("lp_mode must be one-shot or model")
         if method == "epigraph":
             from osqp import OSQP
         else:
             from .interface import OSQP
-        self._solver = OSQP() if method != "epigraph-daqp" else None
+        self._solver = OSQP() if method not in ("epigraph-daqp", "epigraph-daqp-prox") else None
         if method == "native":
             labels, _, _, cl, cu = self._problem.layout()
             if self.row_normalization:
@@ -298,16 +385,22 @@ class PreparedPeakSolver:
             q = self._problem.q
             lower, upper = _scaled_bounds(self._problem.lower, self._problem.upper, self._row_scale)
         else:
-            self._assembly = _assemble(self._problem, "epigraph" if method == "epigraph-daqp" else method)
+            self._assembly = _assemble(self._problem, "epigraph" if method in ("epigraph-daqp", "epigraph-daqp-prox") else method)
             P, A = self._assembly['P'], self._assembly['A']
             q, lower, upper = _vectors(self._problem, self._assembly)
         _native_bounds(lower, upper)
         if not np.isfinite(P.data).all() or not np.isfinite(A.data).all():
             raise UnsupportedProblemError("nonrepresentable transformed matrices")
         self._defaults = defaults
-        if method == "epigraph-daqp":
+        if method in ("epigraph-daqp", "epigraph-daqp-prox"):
+            if len(q) > 2048 or A.shape[0] > 8192:
+                raise UnsupportedProblemError("DAQP epigraph exceeds its declared 2048-variable / 8192-row dense budget")
             self._daqp_problem = Problem(P, q, A, lower, upper, Penalty.uniform(len(lower), soft=False))
-            self._daqp_model, self._daqp_setup = _setup_daqp(self._daqp_problem, defaults)
+            self._daqp_lp = self._daqp_proximal and not np.any(P.data) and defaults.get("lp_mode", "one-shot") == "one-shot"
+            if self._daqp_lp:
+                self._daqp_model, self._daqp_setup = None, 0.
+            else:
+                self._daqp_model, self._daqp_setup = _setup_daqp(self._daqp_problem, defaults, proximal=self._daqp_proximal)
         else:
             self._solver.setup(sparse.triu(P, format="csc"), q, A, lower, upper, **defaults)
         labels, a, b, cl, cu = self._problem.layout()
@@ -359,13 +452,13 @@ class PreparedPeakSolver:
         else:
             solver_q, solver_lo, solver_up = _vectors(candidate, self._assembly)
         _native_bounds(solver_lo, solver_up)
-        if self.method == "epigraph-daqp":
-            flag = self._daqp_model.update(f=np.ascontiguousarray(solver_q),
-                                           blower=np.ascontiguousarray(solver_lo),
-                                           bupper=np.ascontiguousarray(solver_up))
+        if self.method in ("epigraph-daqp", "epigraph-daqp-prox"):
+            flag = 0 if self._daqp_lp else self._daqp_model.update(
+                f=np.ascontiguousarray(solver_q), blower=np.ascontiguousarray(solver_lo),
+                bupper=np.ascontiguousarray(solver_up))
             if flag < 0:
                 from .solvers import _setup_daqp
-                self._daqp_model, self._daqp_setup = _setup_daqp(self._daqp_problem, self._defaults)
+                self._daqp_model, self._daqp_setup = _setup_daqp(self._daqp_problem, self._defaults, proximal=self._daqp_proximal)
                 raise ValueError(f"DAQP rejected vector update: {flag}; previous problem restored")
             self._daqp_problem = replace(self._daqp_problem, q=solver_q, lower=solver_lo, upper=solver_up)
         else:
@@ -376,12 +469,13 @@ class PreparedPeakSolver:
 
     def reset(self):
         start = time.perf_counter()
-        if self.method == "epigraph-daqp":
+        if self.method in ("epigraph-daqp", "epigraph-daqp-prox"):
             # DAQP's pinned API has no reset operation. Rebuilding is explicit;
             # never report it as retaining a factorization or hide its cost.
             from .solvers import _setup_daqp
-            self._daqp_model, self._daqp_setup = _setup_daqp(self._daqp_problem, self._defaults)
-            self.reset_refactorized = True
+            if not self._daqp_lp:
+                self._daqp_model, self._daqp_setup = _setup_daqp(self._daqp_problem, self._defaults, proximal=self._daqp_proximal)
+            self.reset_refactorized = not self._daqp_lp
         else:
             self._solver.warm_start(x=np.zeros(self.dimensions['variables']), y=np.zeros(self.dimensions['rows']))
         self.reset_wall_seconds = time.perf_counter()-start
@@ -389,13 +483,17 @@ class PreparedPeakSolver:
     def solve(self):
         start = time.perf_counter()
         backend_settings = None
-        if self.method == "epigraph-daqp":
+        if self.method in ("epigraph-daqp", "epigraph-daqp-prox"):
             from .solvers import _read_daqp
-            result, result_x, result_y, _, backend_settings = _read_daqp(self._daqp_problem, self._daqp_model, self._daqp_setup)
+            if self._daqp_lp:
+                result, result_x, result_y, backend_settings = _read_daqp_lp(self._daqp_problem, self._defaults)
+            else:
+                result, result_x, result_y, _, backend_settings = _read_daqp(self._daqp_problem, self._daqp_model, self._daqp_setup)
             result.x, result.y = result_x, result_y
         else:
             result = self._solver.solve(raise_error=False)
-        good = result.info.status_val in (1, 2)
+        from .solvers import DAQP_CANDIDATE_FLAGS
+        good = result.info.status_val in (DAQP_CANDIDATE_FLAGS if self.method.startswith("epigraph-daqp") else (1, 2))
         x, y, metrics = None, None, None
         if good:
             x = result.x[:len(self._problem.q)]
@@ -412,6 +510,11 @@ class PreparedPeakSolver:
             output.update(row_normalization=self.row_normalization, row_scale=self._row_scale.tolist())
         if backend_settings is not None:
             output['backend_settings'] = backend_settings
+            output['proximal_iterations'] = int(getattr(result.info, 'proximal_iterations', 0))
+            output['one_shot_lp'] = self._daqp_lp
+            output['workspace_reused'] = not self._daqp_lp
+            output['inexact_candidate'] = result.info.status_val in (4, 5)
+            output['relative_tolerance_mapped'] = False
         return output
 
 
