@@ -87,3 +87,44 @@ def test_linear_equal_free_and_one_sided_rows(quadratic, bounds):
     assert a["metrics"]["objective"] == pytest.approx(
         b["metrics"]["objective"], abs=1e-6
     )
+
+
+@pytest.mark.parametrize(
+    "q,bounded",
+    [(0.5, True), (-0.5, True), (1.5, True), (-1.5, False), (2.5, False), (-0.9, True)],
+)
+def test_asymmetric_linear_recession_distinguishes_bound_sides(q, bounded):
+    p = Problem(
+        sparse.csc_matrix([[0.0]]),
+        np.array([q]),
+        sparse.eye(1, format="csc"),
+        np.array([-1.0]),
+        np.array([1.0]),
+        Penalty(
+            np.array([2.0]), np.array([1.0]), np.zeros(1), np.zeros(1), np.array([True])
+        ),
+    )
+    native = solve(p, "asymmetric")
+    oracle = solve(p, "lifted")
+    if bounded:
+        assert native["status"] == "solved"
+        assert native["x"] == pytest.approx(oracle["x"], abs=2e-6)
+        assert native["x"] == pytest.approx([-1.0 if q > 0 else 1.0], abs=2e-6)
+    else:
+        assert "dual infeasible" in native["status"]
+        assert "dual infeasible" in oracle["status"]
+        assert native["x"] is None and native["metrics"] is None
+
+
+def test_conflicting_hard_rows_remain_infeasible():
+    p = Problem(
+        sparse.eye(1, format="csc"),
+        np.zeros(1),
+        sparse.csc_matrix([[1.0], [1.0]]),
+        np.array([1.0, -np.inf]),
+        np.array([np.inf, -1.0]),
+        Penalty.uniform(2, soft=False),
+    )
+    result = solve(p, "asymmetric")
+    assert "primal infeasible" in result["status"]
+    assert result["x"] is None and result["metrics"] is None
