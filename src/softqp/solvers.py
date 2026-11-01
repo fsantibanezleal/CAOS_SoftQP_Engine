@@ -11,7 +11,11 @@ class UnsupportedProblemError(ValueError):
     """The declared objective is outside a method's supported formulation."""
 
 
-def solve(problem: Problem, method="generalized", **settings):
+def solve(
+    problem: Problem, method="generalized", *, reference_backend="stock", **settings
+):
+    if reference_backend not in ("stock", "native"):
+        raise ValueError("reference_backend must be stock or native")
     problem.validate()
     start = time.perf_counter()
     defaults = dict(
@@ -66,7 +70,14 @@ def solve(problem: Problem, method="generalized", **settings):
         x, y = result.x, result.y
         dimensions = dict(variables=n, rows=m, nnz=problem.P.nnz + problem.A.nnz)
     elif method == "lifted":
-        import osqp
+        if reference_backend == "stock":
+            import osqp
+
+            solver_class = osqp.OSQP
+        else:
+            from .interface import OSQP
+
+            solver_class = OSQP
 
         A = sparse.csc_matrix(problem.A)
         symmetric = np.array_equal(p.lower_linear, p.upper_linear) and np.array_equal(
@@ -82,7 +93,7 @@ def solve(problem: Problem, method="generalized", **settings):
             P1, q1, A1, l1, u1 = lift(
                 problem.P, problem.q, A, problem.lower, problem.upper, reference
             )
-            solver = osqp.OSQP()
+            solver = solver_class()
             solver.setup(sparse.triu(P1, format="csc"), q1, A1, l1, u1, **defaults)
             result = solver.solve()
             x = result.x[:n]
@@ -98,7 +109,7 @@ def solve(problem: Problem, method="generalized", **settings):
                 variables=P1.shape[0], rows=A1.shape[0], nnz=P1.nnz + A1.nnz
             )
         else:
-            result, x, y, dimensions = _lift_asymmetric(problem, defaults)
+            result, x, y, dimensions = _lift_asymmetric(problem, defaults, solver_class)
     elif method == "daqp":
         result, x, y, dimensions, backend_settings = _solve_daqp(problem, defaults)
     else:
@@ -127,9 +138,7 @@ def solve(problem: Problem, method="generalized", **settings):
     return output
 
 
-def _lift_asymmetric(problem, defaults):
-    import osqp
-
+def _lift_asymmetric(problem, defaults, solver_class):
     p = problem.penalty
     n = problem.q.size
     m = problem.lower.size
@@ -175,7 +184,7 @@ def _lift_asymmetric(problem, defaults):
         [problem.P, sparse.diags(quadratic) if k else sparse.csc_matrix((0, 0))],
         format="csc",
     )
-    solver = osqp.OSQP()
+    solver = solver_class()
     solver.setup(
         sparse.triu(P, format="csc"),
         np.r_[problem.q, linear],
