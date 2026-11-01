@@ -1,12 +1,23 @@
 # SoftQP
 
-SoftQP exposes a pinned native OSQP solver with generalized soft-constraint penalties. It preserves the authors' C implementation and Python binding, with a separate import namespace and reproducible local-source build.
+SoftQP exposes a pinned native OSQP solver with generalized soft-constraint penalties. It preserves the authors' C implementation and Python binding, with a separate import namespace, portable wheels and a reproducible local-source build.
 
 The implementation supports the published generalized projection method and a candidate asymmetric separable elastic extension. Native asymmetric solutions are checked against independently lifted QPs; no novelty or performance improvement is claimed.
 
+## Install
+
+Version [0.1.0 is published on PyPI](https://pypi.org/project/softqp/0.1.0/). Portable wheels support CPython 3.12 on Windows x64 and Linux x86_64.
+
+```bash
+python -m pip install "softqp==0.1.0"
+python -m pip install "softqp[comparisons]==0.1.0"  # optional DAQP and ElastiQP adapters
+```
+
+The [GitHub release](https://github.com/fsantibanezleal/CAOS_SoftQP_Engine/releases/tag/v0.01.000) contains the same source archive and wheels, with SHA-256 checksums. Every public file was matched to the tagged workflow output, and a fresh public-index Windows install passed all 94 native tests and the installed-license checks. Linux and Windows wheels pass isolated installed tests in the release workflow.
+
 ## Install from source
 
-Version 0.1.0 targets CPython 3.12, Windows x64 and Linux x86_64. A C/C++ compiler and CMake are required for source installation. Portable wheels and clean installed tests are prepared by the [release workflow](docs/releasing.md); public package publication remains a separate gate.
+A C/C++ compiler and CMake are required for source installation. The source and wheel procedure is documented in [releasing](docs/releasing.md).
 
 ```bash
 python -m pip install .
