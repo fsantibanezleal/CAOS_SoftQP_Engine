@@ -1,4 +1,4 @@
-# 0.02.000 / distribution 0.2.0 (unreleased)
+# 0.02.000 / distribution 0.2.0, 2026-11-01
 
 - Add original-row directional coupled peak updates, compact stock-OSQP epigraph, existing symmetric row-split GSP and ordinary hard-epigraph DAQP comparisons.
 - Include faithful proximal-point DAQP PSD/LP comparison, explicit one-shot/persistent LP policies, original-objective checks and backend-specific inexact candidates.

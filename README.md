@@ -6,14 +6,14 @@ The implementation supports the published generalized projection method and a ca
 
 ## Install
 
-Version [0.1.0 is published on PyPI](https://pypi.org/project/softqp/0.1.0/). Portable wheels support CPython 3.12 on Windows x64 and Linux x86_64.
+Version [0.2.0 is published on PyPI](https://pypi.org/project/softqp/0.2.0/). Portable wheels support CPython 3.12 on Windows x64 and Linux x86_64.
 
 ```bash
-python -m pip install "softqp==0.1.0"
-python -m pip install "softqp[comparisons]==0.1.0"  # optional DAQP and ElastiQP adapters
+python -m pip install "softqp==0.2.0"
+python -m pip install "softqp[comparisons]==0.2.0"  # optional DAQP and ElastiQP adapters
 ```
 
-The [GitHub release](https://github.com/fsantibanezleal/CAOS_SoftQP_Engine/releases/tag/v0.01.000) contains the same source archive and wheels, with SHA-256 checksums. Every public file was matched to the tagged workflow output, and a fresh public-index Windows install passed all 94 native tests and the installed-license checks. Linux and Windows wheels pass isolated installed tests in the release workflow.
+The [GitHub release](https://github.com/fsantibanezleal/CAOS_SoftQP_Engine/releases/tag/v0.02.000) contains the same source archive and wheels, with SHA-256 checksums. Every public file was matched to the tagged workflow output, and a fresh public-index Windows install passed all 186 SDK tests and the installed-license checks. Linux and Windows wheels pass isolated installed tests in the release workflow.
 
 ## Install from source
 
@@ -44,9 +44,9 @@ The DAQP adapter preserves original-scale side costs, exports backend settings, 
 
 Symmetric penalties use the authors' compact signed/shared-slack lifting helper. Asymmetric penalties use explicit nonnegative lower and upper slacks. Performance comparisons must include the compact symmetric baseline rather than forcing an unnecessarily large general formulation.
 
-## Directional coupled peaks (0.2.0 development)
+## Directional coupled peaks (0.2.0)
 
-The source development API adds `PeakGroup`, `PeakProblem`, `PreparedPeakSolver` and `solve_peak` for disjoint directional peak penalties, native original-row updates and exact compact/row-split/DAQP comparisons. The currently published 0.1.0 wheel does not contain this API. See [directional peak semantics and restrictions](docs/directional-peaks.md). No priority or runtime advantage is established.
+The published 0.2.0 API adds `PeakGroup`, `PeakProblem`, `PreparedPeakSolver` and `solve_peak` for disjoint directional peak penalties, native original-row updates and exact compact/row-split/DAQP comparisons. The immutable 0.1.0 wheel predates this API. See [directional peak semantics and restrictions](docs/directional-peaks.md). No priority or runtime advantage is established.
 
 ## Repeated vector updates
 
