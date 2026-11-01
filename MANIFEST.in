@@ -2,5 +2,5 @@ recursive-include native *.c *.h *.hpp *.cpp *.in *.txt *.cmake *.py LICENSE* NO
 include LICENSE NOTICE VERSION
 
 recursive-include licenses *.txt
-include scripts/wheel_smoke.py
+include scripts/wheel_smoke.py scripts/release_version.py
 recursive-include tests *.py

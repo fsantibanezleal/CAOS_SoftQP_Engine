@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 /* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
  * Original upstream copyright and Apache-2.0 license are retained. */
 #ifndef TYPES_H
@@ -87,6 +88,11 @@ typedef struct {
   OSQPVectorf* alpha2;               ///< lower-side quadratic parameter, size m
   OSQPVectorf* upper1;               ///< upper-side linear weight, or NULL
   OSQPVectorf* upper2;               ///< upper-side quadratic weight, or NULL
+  OSQPVectorf* peak_lower;           ///< directional peak scales; NULL for other penalties
+  OSQPVectorf* peak_upper;
+  OSQPFloat peak_rho, peak_sigma;   ///< immutable metric setup snapshot
+  OSQPInt peak_rho_is_vec;
+  OSQPInt peak_numeric_error;        ///< failed representability check; never a solution
   OSQPVectorf* delta;                ///< penalty parameter, size m
 
   /**

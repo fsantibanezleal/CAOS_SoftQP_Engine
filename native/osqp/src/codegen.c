@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: optional penalty-state initializer layout. */
 #include <stdio.h>
 #include <ctype.h>  /* -> toupper */
 #include <time.h>   /* time, ctime */
@@ -354,6 +355,9 @@ static OSQPInt write_penalty(FILE*                  f,
   else              fprintf(f, "  &%sdata_penalty_type,\n", prefix);
   fprintf(f, "  &%sdata_penalty_alpha1,\n", prefix);
   fprintf(f, "  &%sdata_penalty_alpha2,\n", prefix);
+  /* SoftQP: null optional asymmetric/directional state in an ordinary export. */
+  fprintf(f, "  OSQP_NULL,\n  OSQP_NULL,\n  OSQP_NULL,\n  OSQP_NULL,\n");
+  fprintf(f, "  (OSQPFloat)0,\n  (OSQPFloat)0,\n  0,\n  0,\n");
   fprintf(f, "  &%sdata_penalty_delta,\n", prefix);
   fprintf(f, "  %" OSQP_INT_FMT ",\n", pen->ngroups);
   fprintf(f, "  %" OSQP_INT_FMT ",\n", pen->ngrouped);

@@ -1,3 +1,11 @@
+# 0.02.000 / distribution 0.2.0 (unreleased)
+
+- Add original-row directional coupled peak updates, compact stock-OSQP epigraph, existing symmetric row-split GSP and ordinary hard-epigraph DAQP comparisons.
+- Add original-space group/dual diagnostics, fixed-shape warm updates and conservative hard/quadratic recession handling.
+- Restrict native peaks to fixed metric, alpha=1 and no automatic scaling/polishing; reject unsupported code generation and derivatives.
+- Correct adversarially found unit/maximal-float thresholds, settings/cache/allocation boundaries and invalid output markers.
+- Generalize validated source-archive and exact-tag release checks. Original 0.1.0 artifacts and negative experiment stay immutable; no new speed or priority claim.
+
 # Changelog
 
 ## 0.01.000, 2026-11-01

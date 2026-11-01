@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 /* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
  * Original upstream copyright and Apache-2.0 license are retained. */
 #ifndef  OSQP_API_FUNCTIONS_H
@@ -622,6 +623,11 @@ OSQP_API OSQPInt osqp_codegen(OSQPSolver*         solver,
 
 OSQP_API OSQPInt osqp_setup_asymmetric_penalty(OSQPSolver*, const OSQPInt*,
  const OSQPFloat*, const OSQPFloat*, const OSQPFloat*, const OSQPFloat*);
+
+OSQP_API OSQPInt osqp_setup_directional_peaks(OSQPSolver*, OSQPInt, const OSQPInt*,
+ const OSQPFloat*, const OSQPFloat*, const OSQPFloat*, const OSQPFloat*);
+OSQP_API OSQPInt osqp_directional_peak_prox(OSQPInt, const OSQPFloat*, const OSQPFloat*,
+ const OSQPFloat*, const OSQPFloat*, OSQPFloat, OSQPFloat, OSQPFloat*, OSQPFloat*);
 
 # ifdef __cplusplus
 }

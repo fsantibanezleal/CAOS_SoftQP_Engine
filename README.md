@@ -44,6 +44,10 @@ The DAQP adapter preserves original-scale side costs, exports backend settings, 
 
 Symmetric penalties use the authors' compact signed/shared-slack lifting helper. Asymmetric penalties use explicit nonnegative lower and upper slacks. Performance comparisons must include the compact symmetric baseline rather than forcing an unnecessarily large general formulation.
 
+## Directional coupled peaks (0.2.0 development)
+
+The source development API adds `PeakGroup`, `PeakProblem`, `PreparedPeakSolver` and `solve_peak` for disjoint directional peak penalties, native original-row updates and exact compact/row-split/DAQP comparisons. The currently published 0.1.0 wheel does not contain this API. See [directional peak semantics and restrictions](docs/directional-peaks.md). No priority or runtime advantage is established.
+
 ## Repeated vector updates
 
 ```python
