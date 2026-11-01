@@ -128,7 +128,7 @@ def solve(
     return output
 
 
-def _solve_daqp(problem, defaults):
+def _setup_daqp(problem, defaults):
     p = problem.penalty
     n = problem.q.size
     m = problem.lower.size
@@ -188,6 +188,17 @@ def _solve_daqp(problem, defaults):
         model.soft_weights(
             rho_l=rho_l, rho_u=rho_u, w_l=p.lower_linear, w_u=p.upper_linear
         )
+    return model, setup_seconds
+
+
+def _solve_daqp(problem, defaults):
+    model, setup_seconds = _setup_daqp(problem, defaults)
+    return _read_daqp(problem, model, setup_seconds)
+
+
+def _read_daqp(problem, model, setup_seconds):
+    n = problem.q.size
+    m = problem.lower.size
     x, _, flag, info = model.solve()
     y = np.asarray(info["lam"])
     result = SimpleNamespace(

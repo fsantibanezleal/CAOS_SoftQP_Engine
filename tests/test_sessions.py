@@ -83,3 +83,56 @@ def test_updated_hard_row_remains_hard(method):
     result = session.solve()
     assert result["x"] == pytest.approx([0.25], abs=1e-7)
     assert result["metrics"]["hard_violation"] < 1e-7
+
+
+@pytest.mark.parametrize("seed", range(4))
+def test_daqp_active_state_updates_match_cold_independent_lifting(seed):
+    from softqp.sessions import DaqpWorkspace
+
+    rng = np.random.default_rng(seed)
+    n = 5
+    m = 9
+    penalty = Penalty(
+        np.full(m, 0.3),
+        np.full(m, 1.2),
+        np.full(m, 2.0),
+        np.full(m, 4.0),
+        np.r_[np.ones(m - 2, bool), np.zeros(2, bool)],
+    )
+    problem = Problem(
+        sparse.eye(n, format="csc"),
+        rng.normal(size=n),
+        sparse.csc_matrix(rng.normal(size=(m, n))),
+        np.full(m, -1.0),
+        np.full(m, 1.0),
+        penalty,
+    )
+    workspace = DaqpWorkspace(problem)
+    for step in range(5):
+        q = rng.normal(size=n) * 2
+        lower = problem.lower + 0.1 * np.sin(step)
+        upper = problem.upper + 0.1 * np.sin(step)
+        workspace.update(q=q, lower=lower, upper=upper)
+        result = workspace.solve()
+        oracle = solve(replace(problem, q=q, lower=lower, upper=upper), "lifted")
+        assert result["status_code"] in (1, 2)
+        assert result["x"] == pytest.approx(oracle["x"], abs=3e-6)
+        assert result["metrics"]["objective"] == pytest.approx(
+            oracle["metrics"]["objective"], abs=1e-6
+        )
+        assert result["metrics"]["hard_violation"] < 1e-7
+        assert result["metrics"]["stationarity_residual"] < 1e-6
+    assert workspace.update_count == 5
+
+
+def test_daqp_workspace_rejects_invalid_and_structural_edits():
+    from softqp.sessions import DaqpWorkspace
+
+    problem = scalar(penalty=Penalty.uniform(1, soft=False))
+    workspace = DaqpWorkspace(problem)
+    with pytest.raises(ValueError):
+        workspace.update(q=[True])
+    with pytest.raises(ValueError, match="equality"):
+        workspace.update(lower=[0.2], upper=[0.2])
+    assert workspace.update_count == 0
+    assert workspace.solve()["x"] == pytest.approx([1.0], abs=1e-7)
