@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 /* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
  * Original upstream copyright and Apache-2.0 license are retained. */
 #include <math.h>
@@ -46,6 +47,8 @@ void penalty_project(OSQPSolver*        solver,
     return;
   }
 
+  if (pen->peak_lower) { penalty_peak_project(solver,z,v); return; }
+
   if (pen->upper1) {
     OSQPInt i;
     for (i=0; i<v->length; ++i) {
@@ -91,6 +94,7 @@ OSQPFloat penalty_obj_value(const OSQPSolver*  solver,
   OSQPFloat val;
 
   if (!pen) return 0.0;
+  if (pen->peak_lower) return penalty_peak_obj(solver,z);
 
   if (pen->upper1) {
     OSQPInt i; val=0.0;
@@ -130,6 +134,7 @@ OSQPFloat penalty_conj_value(const OSQPSolver*  solver,
   OSQPFloat val;
 
   if (!pen) return 0.0;
+  if (pen->peak_lower) return penalty_peak_conj(solver,y);
 
   if (pen->upper1) {
     OSQPInt i; val=0.0;
@@ -245,6 +250,8 @@ void penalty_free(OSQPWorkspace* work) {
     OSQPVectorf_free(pen->alpha2);
     OSQPVectorf_free(pen->upper1);
     OSQPVectorf_free(pen->upper2);
+    OSQPVectorf_free(pen->peak_lower);
+    OSQPVectorf_free(pen->peak_upper);
     OSQPVectorf_free(pen->delta);
     OSQPVectori_free(pen->group_ptr);
     OSQPVectori_free(pen->group_rows);
@@ -663,6 +670,7 @@ OSQPInt osqp_update_penalty_types(OSQPSolver*    solver,
 
   work = solver->work;
   pen  = work->data->penalty;
+  if (pen && pen->peak_lower) return osqp_error(OSQP_DATA_VALIDATION_ERROR);
 
   if (!pen) {
     c_eprint("no penalty has been set up; call osqp_setup_penalty first");
@@ -730,6 +738,7 @@ OSQPInt osqp_update_penalty_params(OSQPSolver*      solver,
 
   work = solver->work;
   pen  = work->data->penalty;
+  if (pen && pen->peak_lower) return osqp_error(OSQP_DATA_VALIDATION_ERROR);
 
   if (!pen) {
     c_eprint("no penalty has been set up; call osqp_setup_penalty first");
@@ -818,3 +827,6 @@ OSQPFloat penalty_asymmetric_reccone(const OSQPSolver* solver, const OSQPVectorf
   }
   return rate;
 }
+
+/* SoftQP 2026-11-01: original-row directional coupled peak implementation. */
+#include "directional_peak_impl.h"

@@ -1,3 +1,4 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 /* Modified for SoftQP, 2026-10-31: native asymmetric penalty support and bindings.
  * Original upstream copyright and Apache-2.0 license are retained. */
 #ifndef PENALTY_H
@@ -83,6 +84,14 @@ void penalty_unscale(OSQPSolver* solver);
 void penalty_free(OSQPWorkspace* work);
 
 # endif /* ifndef OSQP_EMBEDDED_MODE */
+
+OSQPInt penalty_peak_settings_valid(const OSQPSolver*, const OSQPSettings*);
+void penalty_peak_invalid_info(OSQPInfo*);
+void penalty_peak_zero_dual(OSQPSolver*);
+void penalty_peak_project(OSQPSolver*, OSQPVectorf*, const OSQPVectorf*);
+OSQPFloat penalty_peak_obj(const OSQPSolver*, const OSQPVectorf*);
+OSQPFloat penalty_peak_conj(const OSQPSolver*, const OSQPVectorf*);
+OSQPFloat penalty_peak_reccone(const OSQPSolver*, const OSQPVectorf*, OSQPFloat);
 
 OSQPFloat penalty_asymmetric_reccone(const OSQPSolver*, const OSQPVectorf*, OSQPFloat);
 

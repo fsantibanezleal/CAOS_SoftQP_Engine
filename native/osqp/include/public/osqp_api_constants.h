@@ -1,7 +1,9 @@
+/* Modified for SoftQP, 2026-11-01: directional coupled peak support. */
 #ifndef OSQP_API_CONSTANTS_H
 #define OSQP_API_CONSTANTS_H
 
 #include "osqp_configure.h"
+#include <math.h>
 
 /***********************
 * Solver capabilities *
@@ -36,7 +38,8 @@ enum osqp_status_type {
     OSQP_TIME_LIMIT_REACHED,
     OSQP_NON_CVX,               /* problem non-convex */
     OSQP_SIGINT,                /* interrupted by user */
-    OSQP_UNSOLVED               /* Unsolved; only setup function has been called */
+    OSQP_UNSOLVED,              /* Unsolved; only setup function has been called */
+    OSQP_NUMERICAL_ERROR        /* SoftQP: nonrepresentable directional kernel arithmetic */
 };
 extern const char * OSQP_STATUS_MESSAGE[];
 
@@ -214,7 +217,7 @@ extern const char * OSQP_ERROR_MESSAGE[];
 # endif
 
 # ifndef OSQP_NAN
-#  define OSQP_NAN ((OSQPFloat)0x7fc00000UL)  // not a number
+#  define OSQP_NAN ((OSQPFloat)NAN)  // IEEE NaN, never a finite integer cast
 # endif
 
 # ifndef OSQP_INFTY

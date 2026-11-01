@@ -11,3 +11,10 @@ The namespace and reproducible local-source build are modified for SoftQP.
 SoftQP modifications include asymmetric projection, objective, conjugate, scaling
 and recession paths, original-space contracts, compact/asymmetric lifting adapters
 and the optional original-scale DAQP comparison. Modified files are marked.
+
+SoftQP 0.2 adds original-row directional coupled peak kernels, original-space
+group diagnostics and conservative recession certificates, exact compact/row-split
+baselines, fixed-shape vector workspaces, explicit numeric-failure status and
+IEEE NaN invalidation. Unsupported directional scaling, adaptive metrics, code
+generation and sensitivities are rejected. These are research implementation
+changes, with no claim of mathematical priority or computational superiority.
