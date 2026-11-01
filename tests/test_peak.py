@@ -101,6 +101,18 @@ def test_coupled_dual_budget_and_directional_scales_do_not_become_separable():
             replace(problem, groups=(group,)).validate()
 
 
+def test_hard_row_gap_cannot_cancel_wrong_soft_group_subgradient():
+    problem = PeakProblem(sparse.csc_matrix((2, 2)), np.array([2e7, 1.]),
+                          sparse.eye(2, format='csc'), np.zeros(2), np.array([np.inf, 0.]),
+                          (PeakGroup([1]),))
+    metrics = problem.evaluate(np.array([-1e-7, 1.]), np.array([-2e7, -1.]))
+    assert metrics['objective'] == 0
+    assert metrics['hard_violation'] == pytest.approx(1e-7)
+    assert metrics['normalized_stationarity'] == 0
+    assert metrics['normalized_aggregate_fenchel_residual'] == 0
+    assert metrics['normalized_fenchel_residual'] >= 1
+
+
 @pytest.mark.parametrize('settings', [{'alpha': value} for value in
                                     (0, 2, -1, np.nan, np.inf, True, [1.6], 1+0j)] + [{'scaling': 10},
                                     {'adaptive_rho': True}, {'polishing': True}])
