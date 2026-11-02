@@ -1,6 +1,6 @@
 # Directional coupled peak penalties
 
-This API is under development for distribution 0.2.0. Public distribution 0.1.0 does not contain it. The method is a restricted native research implementation, with no established timing advantage or historical priority claim. The original negative 0.1.0 experiment remains unchanged.
+This API is included in [distribution 0.2.0, published on PyPI](https://pypi.org/project/softqp/0.2.0/). Public distribution 0.1.0 does not contain it. The method is a restricted native research implementation, with no established timing advantage or historical priority claim. The original negative 0.1.0 experiment remains unchanged.
 
 ## Declared objective
 
