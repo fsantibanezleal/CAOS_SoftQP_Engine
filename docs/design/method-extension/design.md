@@ -15,9 +15,9 @@ The complete reviewed mathematical, numerical, learning, timing and recovery spe
 
 ## Engine boundaries
 
-`learning-original` admits original QP coefficients, units, semantics and source identity. `learning-transform` retains the reversible primal/dual and epigraph/cone map. `learning-features` supplies the declared ordered coordinate vector or typed graph and a training-only normalizer identity. `learning-checkpoint` contains numeric weights and declarative architecture/provenance; optimizer resume state is a separate trusted local artifact. `learning-calibration` binds the graph decision threshold to its exact checkpoint and calibration split. `learning-method-result` retains native status, recovered original results, diagnostics, all timing phases and explicit failures.
+`learning-problem` admits original QP coefficients, units, semantics and source identity together with the reversible canonical primal/dual and epigraph/cone map. The internal transformation object belongs to that boundary; it is not an additional artifact contract. `learning-features` supplies the declared ordered coordinate vector or typed graph and a training-only normalizer identity. `learning-checkpoint` contains numeric weights and declarative architecture/provenance; optimizer resume state is a separate trusted local artifact. `learning-calibration` binds the graph decision threshold to its exact checkpoint and calibration split. `learning-method-result` retains native status, recovered original results, diagnostics, all timing phases and explicit failures.
 
-The remaining dataset, split, labels, evaluation and export-index boundaries belong to the product. All contracts remain versioned, strict and source-bound. New boundaries are separate from the immutable historical result schemas. The implementation must supply real examples and producer/consumer tests; this design does not claim those gates passed.
+The protocol, dataset, split, labels, evaluation and export-index boundaries belong to the product. The normative catalog declares eleven artifact contracts. All contracts remain versioned, strict and source-bound. New boundaries are separate from the immutable historical result schemas. The implementation must supply real examples and producer/consumer tests; this design does not claim those gates passed.
 
 ## Numerical distinctions
 
