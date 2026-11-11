@@ -25,6 +25,8 @@ def defaults(obj):
     return {n: serial(getattr(obj, n)) for n in dir(obj) if not n.startswith("_") and not callable(getattr(obj, n))}
 
 def main():
+    if not __debug__:
+        raise RuntimeError("Native binary admission requires unoptimized Python; omit -O and -OO.")
     parser = argparse.ArgumentParser(); parser.add_argument("--check", action="store_true", required=True); parser.parse_args()
     sys.dont_write_bytecode = True
     for name in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"]: os.environ[name] = "1"
@@ -44,8 +46,11 @@ def main():
     imports = time.monotonic() - start
     assert imports < 180, "cold import admission deadline"
     modules = {}
+    prefix = Path(sys.prefix).resolve(strict=True)
     for name in ["numpy", "scipy", "clarabel", "proxsuite", "piqp", "daqp", "osqp", "softqp", "elastiqp", "torch", "torch_geometric"]:
-        module = importlib.import_module(name); path = Path(module.__file__).resolve(); assert path.is_relative_to(Path(sys.prefix).resolve()), (name, str(path))
+        module = importlib.import_module(name)
+        path = Path(module.__file__).resolve(strict=True)
+        assert path.parts[:len(prefix.parts)] == prefix.parts, (name, str(path))
         modules[name] = path.relative_to(Path(sys.prefix).resolve()).as_posix()
     P = sparse.eye(2, format="csc", dtype=np.float64); q = np.array([-2., -4.]); A = sparse.csc_matrix([[1., 1.], [1., 0.], [0., 1.]])
     assert all(x.dtype == np.float64 and x.has_canonical_format for x in [P, A])
