@@ -45,19 +45,37 @@ def _unoptimized():
 
 def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
 def encode(value): return (json.dumps(value,sort_keys=True,indent=2,allow_nan=False)+"\n").encode()
-def source_manifest(dist,prefix):
-    entries=[]
-    for name,recorded,size in csv.reader(io.StringIO(dist.read_text("RECORD"))):
+def _verify_source(path, relative, recorded, size):
+    algorithm, expected_hash = recorded.split("=", 1)
+    hasher = hashlib.new(algorithm)
+    with path.open("rb") as handle:
+        actual_size = 0
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+            actual_size += len(chunk)
+    actual_hash = base64.urlsafe_b64encode(hasher.digest()).decode("ascii").rstrip("=")
+    assert actual_hash == expected_hash and actual_size == size, "installed source bytes differ: " + relative
+
+
+def _source_plan(dist, prefix):
+    plan = []
+    for name, recorded, size in csv.reader(io.StringIO(dist.read_text("RECORD"))):
         # Installers can record optional bytecode in an external cache. It has
         # no authority over source files and is not read during admission.
         if not recorded and not size and PurePosixPath(name.replace("\\", "/")).suffix == ".pyc":
             continue
-        path=Path(dist.locate_file(name)).resolve()
+        path = Path(dist.locate_file(name)).resolve()
         assert _within(path, prefix), "distribution file escapes runtime"
-        relative=path.relative_to(prefix).as_posix()
-        if not recorded or not relative.lower().startswith("lib/site-packages/") or relative.endswith(".pyc") or relative.endswith(("/INSTALLER","/REQUESTED","/direct_url.json","/RECORD")): continue
-        entries.append([relative,recorded,int(size)])
-    return sorted(entries)
+        relative = path.relative_to(prefix).as_posix()
+        if (not recorded or not relative.lower().startswith("lib/site-packages/")
+                or relative.endswith((".pyc", "/INSTALLER", "/REQUESTED", "/direct_url.json", "/RECORD"))):
+            continue
+        plan.append(([relative, recorded, int(size)], path))
+    return sorted(plan, key=lambda item: item[0])
+
+
+def source_manifest(dist, prefix):
+    return [entry for entry, _ in _source_plan(dist, prefix)]
 
 def check(root,expected,full=False):
     _unoptimized()
@@ -84,21 +102,18 @@ def check(root,expected,full=False):
         for key in ["metadata","wheel"]:
             target=(prefix/row[key+"_relative_path"]).resolve();assert _within(target, prefix)
             assert digest(target)==row[key+"_sha256"],key+" identity differs"
-        entries=source_manifest(dist,prefix)
+        plan = _source_plan(dist, prefix)
+        entries = [entry for entry, _ in plan]
         assert len(entries)==row["source_file_count"] and hashlib.sha256(encode(entries)).hexdigest()==row["source_manifest_sha256"],"package source manifest differs"
         for license in row["licenses"]:
             path=(prefix/license["installed_relative_path"]).resolve();public=(root/license["profile_relative_path"]).resolve()
             assert _within(path, prefix) and _within(public, root.resolve()),"license path escape"
             assert digest(path)==digest(public)==license["sha256"],"license identity differs"
         if full:
-            for relative,recorded,size in entries:
-                path=(prefix/relative).resolve();assert _within(path, prefix)
-                algorithm,expected_hash=recorded.split("=",1);h=hashlib.new(algorithm)
-                with path.open("rb") as handle:
-                    for chunk in iter(lambda:handle.read(1024*1024),b""): h.update(chunk)
-                actual=base64.urlsafe_b64encode(h.digest()).decode().rstrip("=")
-                assert actual==expected_hash and path.stat().st_size==size,"installed source bytes differ: "+relative
-                file_count+=1
+            # Only the externally bound manifest may authorize reading file contents.
+            for (relative, recorded, size), path in plan:
+                _verify_source(path, relative, recorded, size)
+            file_count += len(plan)
     for origin in profile["imported_origins"].values():
         path=(prefix/origin["relative_path"]).resolve();assert _within(path, prefix)
         assert digest(path)==origin["sha256"],"import origin bytes differ"
