@@ -5,6 +5,8 @@ import pytest
 from scipy import sparse
 
 from softqp.comparators.backend import solve_candidate
+from softqp.lifting import lift_problem
+from softqp.problem import Penalty, Problem
 
 
 BACKENDS = [
@@ -59,6 +61,48 @@ def test_infeasible_input_does_not_produce_a_candidate(method, package, _):
     }
     assert result.native_status in expected_failures[method]
     assert result.x is None and result.y is None
+
+
+@pytest.mark.parametrize("method, package, expected_status", BACKENDS)
+def test_asymmetric_soft_objective_survives_lift_and_dual_recovery(
+    method, package, expected_status
+):
+    pytest.importorskip(package)
+    problem = Problem(
+        P=sparse.csc_matrix([[1.0]]),
+        q=np.array([-4.0]),
+        A=sparse.csc_matrix([[1.0]]),
+        lower=np.array([-np.inf]),
+        upper=np.array([1.0]),
+        penalty=Penalty(
+            lower_linear=np.array([0.0]),
+            upper_linear=np.array([2.0]),
+            lower_quadratic=np.array([0.0]),
+            upper_quadratic=np.array([3.0]),
+            soft=np.array([True]),
+        ),
+    )
+    problem.validate()
+    lifted = lift_problem(problem)
+    candidate = solve_candidate(
+        method, lifted.P, lifted.q, lifted.A, lifted.lower, lifted.upper
+    )
+    assert candidate.native_status == expected_status
+    assert candidate.x is not None and candidate.y is not None
+
+    x, y = lifted.recover(candidate.x, candidate.y)
+    metrics = problem.evaluate(x)
+    violation = max(float(x[0] - 1.0), 0.0)
+    penalty_gradient = 2.0 + 3.0 * violation
+    stationarity = float(x[0] - 4.0 + penalty_gradient)
+
+    # Independent scalar optimum and original-space objective:
+    # x - 4 + 2 + 3(x - 1) = 0 -> x = 1.25; f(x) = -3.625.
+    np.testing.assert_allclose(x, [1.25], atol=3e-6, rtol=0)
+    np.testing.assert_allclose(metrics["objective"], -3.625, atol=1e-7, rtol=0)
+    np.testing.assert_allclose(metrics["hard_violation"], 0.0, atol=0, rtol=0)
+    np.testing.assert_allclose(stationarity, 0.0, atol=1e-5, rtol=0)
+    np.testing.assert_allclose(y, [penalty_gradient], atol=1e-5, rtol=0)
 
 
 @pytest.mark.parametrize("method", ("clarabel", "proxqp", "piqp"))
