@@ -4,3 +4,7 @@ include LICENSE NOTICE VERSION
 recursive-include licenses *.txt
 include scripts/wheel_smoke.py scripts/release_version.py
 recursive-include tests *.py
+
+include docs/releasing.md docs/learning-initializers.md
+recursive-include docs/design/method-extension *.md *.json
+recursive-include environments/method-extension-cpu *.py *.md

@@ -27,12 +27,13 @@ def defaults(obj):
 def main():
     if not __debug__:
         raise RuntimeError("Native binary admission requires unoptimized Python; omit -O and -OO.")
-    parser = argparse.ArgumentParser(); parser.add_argument("--check", action="store_true", required=True); parser.parse_args()
+    parser = argparse.ArgumentParser(); parser.add_argument("--check", action="store_true", required=True); parser.add_argument("--sdk-version", choices=("0.2.0", "0.3.0"), default="0.2.0"); args=parser.parse_args()
     sys.dont_write_bytecode = True
     for name in ["OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"]: os.environ[name] = "1"
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     start = time.monotonic()
-    for name, version in PINS.items(): assert md.version(name) == version, (name, md.version(name), version)
+    pins = dict(PINS, softqp=args.sdk_version)
+    for name, version in pins.items(): assert md.version(name) == version, (name, md.version(name), version)
     import numpy as np
     from scipy import sparse
     import psutil
@@ -124,7 +125,7 @@ def main():
     assert torch.allclose(value,torch.full_like(value,width*.001),atol=1e-9,rtol=0) and torch.allclose(feature.grad,torch.full_like(feature,.128),atol=1e-12,rtol=0)
     thread_info=threadpool_info(); assert all(v["num_threads"]==1 for v in thread_info)
     mem=psutil.Process().memory_info(); peak=getattr(mem,"peak_wset",mem.rss); assert peak<8*2**30
-    output=dict(scope="binary-admission-only; no scientific artifacts consumed or produced",pins=PINS,modules=modules,controls=rows,torch_linalg=dict(answer=answer.tolist(),rhs_gradient=rhs.grad.tolist(),cpu=True),pyg=dict(output=out.tolist(),input_gradient=x.grad.tolist(),architecture_parameters=52098,parameter_shapes={n:list(v.shape) for n,v in graph.named_parameters()}),resource=dict(representative_head=[128,224],feature_width=width,linear_parameters=sum(v.numel() for v in linear.parameters()),peak_process_rss_bytes=peak,os_threads=psutil.Process().num_threads(),threadpools=thread_info,cold_import_seconds=imports,total_seconds=time.monotonic()-start),defaults=raw_defaults,torch_source_git=torch.version.git_version)
+    output=dict(scope="binary-admission-only; no scientific artifacts consumed or produced",pins=pins,modules=modules,controls=rows,torch_linalg=dict(answer=answer.tolist(),rhs_gradient=rhs.grad.tolist(),cpu=True),pyg=dict(output=out.tolist(),input_gradient=x.grad.tolist(),architecture_parameters=52098,parameter_shapes={n:list(v.shape) for n,v in graph.named_parameters()}),resource=dict(representative_head=[128,224],feature_width=width,linear_parameters=sum(v.numel() for v in linear.parameters()),peak_process_rss_bytes=peak,os_threads=psutil.Process().num_threads(),threadpools=thread_info,cold_import_seconds=imports,total_seconds=time.monotonic()-start),defaults=raw_defaults,torch_source_git=torch.version.git_version)
     print(json.dumps(serial(output),sort_keys=True,indent=2,allow_nan=False))
 
 if __name__ == "__main__": main()

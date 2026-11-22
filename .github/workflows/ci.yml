@@ -20,5 +20,5 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install ".[dev,comparisons]"
-      - run: python -m pytest -q
+      - run: python -m pytest -q -rs
       - run: python -m build
