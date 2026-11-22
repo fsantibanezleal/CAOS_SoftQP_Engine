@@ -77,7 +77,7 @@ def _source_plan(dist, prefix):
 def source_manifest(dist, prefix):
     return [entry for entry, _ in _source_plan(dist, prefix)]
 
-def check(root,expected,full=False):
+def check(root,expected,full=False, *, progress=None):
     _unoptimized()
     root = root.resolve(strict=True)
     raw = _rooted_bytes(root, "provenance.json")
@@ -88,6 +88,8 @@ def check(root,expected,full=False):
     assert _system_site_packages_disabled(_rooted_bytes(prefix, "pyvenv.cfg").decode("utf-8")), "shared site packages refused"
     assert hashlib.sha256(_rooted_bytes(root, "requirements.lock")).hexdigest()==profile["requirements_sha256"],"requirement bytes differ"
     assert hashlib.sha256(_rooted_bytes(root, "defaults.json")).hexdigest()==profile["defaults_sha256"],"default settings bytes differ"
+    if progress is not None:
+        progress("Reading installed distribution metadata")
     distributions = list(md.distributions())
     installed = {_distribution_name(d.metadata["Name"]): d for d in distributions}
     if len(installed) != len(distributions):
@@ -98,6 +100,8 @@ def check(root,expected,full=False):
     assert set(installed)==expected_names,"missing or unexpected installed distribution"
     file_count=0
     for row in profile["distributions"]:
+        if progress is not None:
+            progress("Verifying " + row["name"] + "==" + row["version"])
         dist=installed[_distribution_name(row["name"])];assert dist.version==row["version"],"version mismatch"
         for key in ["metadata","wheel"]:
             target=(prefix/row[key+"_relative_path"]).resolve();assert _within(target, prefix)
@@ -111,7 +115,9 @@ def check(root,expected,full=False):
             assert digest(path)==digest(public)==license["sha256"],"license identity differs"
         if full:
             # Only the externally bound manifest may authorize reading file contents.
-            for (relative, recorded, size), path in plan:
+            for index, ((relative, recorded, size), path) in enumerate(plan, 1):
+                if progress is not None and (index == 1 or size >= 64 * 1024 * 1024 or index % 500 == 0):
+                    progress(f"Source {index}/{len(plan)} ({size} bytes) {relative}")
                 _verify_source(path, relative, recorded, size)
             file_count += len(plan)
     for origin in profile["imported_origins"].values():
@@ -120,6 +126,17 @@ def check(root,expected,full=False):
     return dict(distributions=len(installed),full_source_files_checked=file_count,full_files=full,read_only=True)
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument("--check",action="store_true",required=True);parser.add_argument("--expected-profile-sha256",required=True);parser.add_argument("--profile",type=Path,default=Path(__file__).resolve().parent);parser.add_argument("--full-files",action="store_true");args=parser.parse_args()
-    print(json.dumps(check(args.profile.resolve(),args.expected_profile_sha256,args.full_files),sort_keys=True))
-if __name__=="__main__":main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true", required=True)
+    parser.add_argument("--expected-profile-sha256", required=True)
+    parser.add_argument("--profile", type=Path, default=Path(__file__).resolve().parent)
+    parser.add_argument("--full-files", action="store_true")
+    parser.add_argument("--progress", action="store_true", help="Write verification progress to stderr")
+    args = parser.parse_args()
+    progress = (lambda message: print(message, file=sys.stderr, flush=True)) if args.progress else None
+    result = check(args.profile, args.expected_profile_sha256, args.full_files, progress=progress)
+    print(json.dumps(result, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

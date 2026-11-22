@@ -65,6 +65,13 @@ def solve(
 ):
     if reference_backend not in ("stock", "native"):
         raise ValueError("reference_backend must be stock or native")
+    from .comparators.vertical import METHODS, ComparatorSession
+
+    if method in METHODS:
+        start = time.perf_counter()
+        result = ComparatorSession(problem, method, **settings).solve()
+        result["elapsed_seconds"] = time.perf_counter() - start
+        return result
     problem.validate()
     start = time.perf_counter()
     defaults = dict(
