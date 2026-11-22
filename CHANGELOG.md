@@ -1,3 +1,9 @@
+# 0.03.000 / distribution 0.3.0, 2026-11-22
+
+- Add official Clarabel, ProxQP and PIQP comparator paths with signed original duals, physical-unit recovery and exact hard-QP recession checks.
+- Add CPU learned warm-start and active-set initialization primitives. Trained models and prospective scientific evaluation remain separate product work.
+- Publish exact optional comparison pins and qualify the installed SDK under the separate hash-locked CPU profile.
+
 # 0.02.000 / distribution 0.2.0, 2026-11-01
 
 - Add original-row directional coupled peak updates, compact stock-OSQP epigraph, existing symmetric row-split GSP and ordinary hard-epigraph DAQP comparisons.

@@ -1,0 +1,44 @@
+{
+  "state": "accepted-design-only; typed contracts and implementation pending",
+  "source_date": "2026-11-05",
+  "engine_baseline": "722380f60ad6d9dc8fe273d0939242fb5876a1cc",
+  "manifest_sha256": "e098010809f8b4cbb57f04e70279bf0b3f4aa90994be8a1ae022bbb52a4c7fb0",
+  "review_sha256": "3738e25295f950cacfcef2dc723bbef5cc3416260d3541354b30b204327e2262",
+  "independent_audit_sha256": "ad8c5eb89a395249b29e3ef5bf6cefa46cbe6072069936a2250cfbfbc1557f39",
+  "private_persistence_commit": "e981e0653819c3d089034a64b53e99019993c372",
+  "scope": "Exact eight normative document exports; not the complete private registration/review/source/keyset evidence bundle.",
+  "files": {
+    "specification/design.md": {
+      "sha256": "c7b75ba3536fa0ed550c22f9fccd655ff93f857074ea766905a3a454f60a9a6f",
+      "bytes": 22734
+    },
+    "specification/contracts.md": {
+      "sha256": "a37b6d9c4736239644c2023e2cd4cfd2470f3729b8fa1c1a789780d735d32da9",
+      "bytes": 22861
+    },
+    "specification/generator-spec.md": {
+      "sha256": "6d7e4d318a9e007f5a61009181af4cab24f24155ad10f77fea77ffd558839269",
+      "bytes": 13563
+    },
+    "specification/learning-spec.md": {
+      "sha256": "1dac06d1e1f5da1131fff26f34289d6547f67bba302e041d1368d043030e2b33",
+      "bytes": 13424
+    },
+    "specification/numerical-spec.md": {
+      "sha256": "560c172a7a4e310ac0d9ce09b51f56eb8a7b89f9a1294467fe9600417af78a14",
+      "bytes": 13140
+    },
+    "specification/protocol.md": {
+      "sha256": "4d31955538a11a073b65cee92912368ef729fddcae35fe4238cc8718e2789b55",
+      "bytes": 18571
+    },
+    "specification/recovery-spec.md": {
+      "sha256": "9a10bae06b05372651256eacf6a044d09af89007bf6a689b56725fddfba1deab",
+      "bytes": 6834
+    },
+    "specification/timing-spec.md": {
+      "sha256": "85db53972d6d05c49d6001a20a0e9680bd94c6ab6f2b5bcb02f5d3ed13367c67",
+      "bytes": 13162
+    }
+  }
+}

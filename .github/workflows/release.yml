@@ -7,13 +7,23 @@ on:
         description: Publish verified tag artifacts through the configured PyPI trusted publisher
         type: boolean
         default: false
+      qualification_run:
+        description: Successful tag qualification run whose exact artifacts were independently checked
+        type: string
+        default: ""
+      qualified_hashes:
+        description: Space-separated sorted SHA256 values for the three qualified distributions
+        type: string
+        default: ""
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 jobs:
   source:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.publish }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -46,8 +56,10 @@ jobs:
       CIBW_ARCHS_WINDOWS: AMD64
       CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
       CIBW_ENVIRONMENT: CMAKE_BUILD_PARALLEL_LEVEL=2 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1
-      CIBW_TEST_REQUIRES: pytest==9.2.0 osqp==1.1.3 daqp==0.10.3 elastiqp==0.2.0
-      CIBW_TEST_COMMAND: python {project}/scripts/wheel_smoke.py
+      CIBW_TEST_REQUIRES: pytest==9.2.0 osqp==1.1.3 daqp==0.10.3 elastiqp==0.2.0 clarabel==0.11.1 proxsuite==0.7.2 piqp==0.6.4
+      CIBW_TEST_COMMAND: >-
+        python -c "print('CPU learning collection is excluded from hosted wheel smoke')"
+        && python {project}/scripts/wheel_smoke.py
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -69,12 +81,13 @@ jobs:
           if-no-files-found: error
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish
-    needs: [source, wheels]
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/project/softqp/
     permissions:
+      contents: read
+      actions: read
       id-token: write
     steps:
       - uses: actions/checkout@v4
@@ -90,11 +103,43 @@ jobs:
         run: |
           python scripts/release_version.py --ref "$RELEASE_REF"
           git merge-base --is-ancestor HEAD origin/main
+      - name: Require successful qualification for this exact tag and workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUALIFICATION_RUN: ${{ inputs.qualification_run }}
+          RELEASE_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          [[ "$QUALIFICATION_RUN" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFICATION_RUN" |
+            jq -e --arg sha "$GITHUB_SHA" --arg tag "${RELEASE_REF#refs/tags/}" '
+              .head_sha == $sha and .head_branch == $tag and
+              .event == "workflow_dispatch" and .conclusion == "success" and
+              .path == ".github/workflows/release.yml"'
       - uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.qualification_run }}
           pattern: release-*-${{ github.sha }}
           merge-multiple: true
           path: dist
+      - name: Verify reviewed distribution bytes
+        env:
+          QUALIFIED_HASHES: ${{ inputs.qualified_hashes }}
+        run: |
+          python - <<'PY'
+          from hashlib import file_digest
+          import os
+          from pathlib import Path
+          files = sorted(Path("dist").iterdir())
+          assert len(files) == 3 and sum(p.suffix == ".whl" for p in files) == 2
+          assert sum(p.name.endswith(".tar.gz") for p in files) == 1
+          hashes = []
+          for path in files:
+              with path.open("rb") as handle:
+                  hashes.append(file_digest(handle, "sha256").hexdigest())
+          assert sorted(hashes) == os.environ["QUALIFIED_HASHES"].split()
+          PY
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist

@@ -10,7 +10,7 @@ from .lifting import lift_problem
 
 
 class PreparedSolver:
-    """Reuse factorization and warm state for q/bound changes, with original-space recovery.
+    """Prepare fixed-matrix q/bound updates and original-space recovery.
 
     P, A, soft policy, coefficients and finite-side pattern are fixed. Update timing
     includes Python validation and lifted-vector construction. No penalty update API
@@ -20,17 +20,26 @@ class PreparedSolver:
     def __init__(
         self, problem, method="asymmetric", *, reference_backend="native", **settings
     ):
+        from .comparators.vertical import METHODS, ComparatorSession
+
+        self._comparator = None
+        if reference_backend not in ("native", "stock"):
+            raise ValueError("reference_backend must be native or stock")
+        self.method = method
+        self.reference_backend = reference_backend
+        if method in METHODS:
+            self._comparator = ComparatorSession(problem, method, **settings)
+            self.setup_wall_seconds = self._comparator.setup_wall_seconds
+            self.update_wall_seconds = 0.0
+            self.update_count = 0
+            return
         start = time.perf_counter()
         if method not in ("generalized", "asymmetric", "lifted"):
             raise UnsupportedProblemError(
-                "prepared workspaces support generalized, asymmetric and lifted methods"
+                "unknown prepared QP method"
             )
-        if reference_backend not in ("native", "stock"):
-            raise ValueError("reference_backend must be native or stock")
         self._problem = copy.deepcopy(problem)
         self._problem.validate()
-        self.method = method
-        self.reference_backend = reference_backend
         defaults = dict(
             verbose=False,
             eps_abs=1e-7,
@@ -66,9 +75,15 @@ class PreparedSolver:
     @property
     def problem(self):
         """An independent snapshot; mutating it cannot alter workspace metadata."""
-        return copy.deepcopy(self._problem)
+        source = self._comparator.problem if self._comparator is not None else self._problem
+        return copy.deepcopy(source)
 
     def update(self, *, q=None, lower=None, upper=None):
+        if self._comparator is not None:
+            self._comparator.update(q=q, lower=lower, upper=upper)
+            self.update_count = self._comparator.update_count
+            self.update_wall_seconds = self._comparator.update_wall_seconds
+            return
         start = time.perf_counter()
         current = self._problem
         candidate = replace(
@@ -107,6 +122,8 @@ class PreparedSolver:
 
     def reset(self):
         """Reset primal and dual warm iterates while retaining the factorization."""
+        if self._comparator is not None:
+            return self._comparator.reset()
         n = self._lifted.q.size if self._lifted is not None else self._problem.q.size
         m = (
             self._lifted.lower.size
@@ -116,6 +133,8 @@ class PreparedSolver:
         self._solver.warm_start(x=np.zeros(n), y=np.zeros(m))
 
     def solve(self):
+        if self._comparator is not None:
+            return self._comparator.solve()
         start = time.perf_counter()
         result = self._solver.solve()
         p = self._problem
