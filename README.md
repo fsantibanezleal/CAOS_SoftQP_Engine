@@ -6,14 +6,16 @@ The implementation supports the published generalized projection method and a ca
 
 ## Install
 
-Version [0.2.0 is published on PyPI](https://pypi.org/project/softqp/0.2.0/). Portable wheels support CPython 3.12 on Windows x64 and Linux x86_64.
+Release version [0.3.0](https://pypi.org/project/softqp/0.3.0/). Portable wheels support CPython 3.12 on Windows x64 and Linux x86_64.
 
 ```bash
-python -m pip install "softqp==0.2.0"
-python -m pip install "softqp[comparisons]==0.2.0"  # optional DAQP and ElastiQP adapters
+python -m pip install "softqp==0.3.0"
+python -m pip install "softqp[comparisons]==0.3.0"
 ```
 
-The [GitHub release](https://github.com/fsantibanezleal/CAOS_SoftQP_Engine/releases/tag/v0.02.000) contains the same source archive and wheels, with SHA-256 checksums. Every public file was matched to the tagged workflow output, and a fresh public-index Windows install passed all 186 SDK tests and the installed-license checks. Linux and Windows wheels pass isolated installed tests in the release workflow.
+The optional comparisons include DAQP, ElastiQP, Clarabel, ProxQP and PIQP. The [release procedure](docs/releasing.md) describes display and distribution versioning, wheel checks and source provenance.
+
+The [CPU learning profile](environments/method-extension-cpu/README.md) supplies the exact optional CPU PyTorch and PyG dependencies for the [learned initializer primitives](docs/learning-initializers.md). The default SDK and comparisons extra do not install PyTorch. This release provides solver and learning primitives. Trained checkpoints, held-out results and performance claims require a separately registered product campaign.
 
 ## Install from source
 

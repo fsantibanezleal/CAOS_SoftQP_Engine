@@ -361,6 +361,21 @@ class PreparedPeakSolver:
     """Owned fixed-shape workspace with validated atomic vector updates."""
 
     def __init__(self, problem, method="native", *, row_normalization=True, **settings):
+        from .comparators.vertical import METHODS, ComparatorSession
+
+        self._comparator = None
+        if method in METHODS:
+            self._comparator = ComparatorSession(problem, method, **settings)
+            self.method = method
+            self.setup_wall_seconds = self._comparator.setup_wall_seconds
+            self.update_wall_seconds = 0.0
+            self.update_count = 0
+            self.reset_wall_seconds = 0.0
+            self.reset_refactorized = False
+            self.row_normalization = False
+            P, q, A, _, _ = self._comparator.data[0]
+            self.dimensions = dict(variables=q.size, rows=A.shape[0], nnz=P.nnz + A.nnz)
+            return
         start = time.perf_counter()
         if method not in ("native", "epigraph", "row-split-gsp", "epigraph-daqp", "epigraph-daqp-prox"):
             raise ValueError("method must be native, epigraph, row-split-gsp, epigraph-daqp or epigraph-daqp-prox")
@@ -444,9 +459,15 @@ class PreparedPeakSolver:
 
     @property
     def problem(self):
-        return copy.deepcopy(self._problem)
+        source = self._comparator.problem if self._comparator is not None else self._problem
+        return copy.deepcopy(source)
 
     def update(self, *, q=None, lower=None, upper=None):
+        if self._comparator is not None:
+            self._comparator.update(q=q, lower=lower, upper=upper)
+            self.update_count = self._comparator.update_count
+            self.update_wall_seconds = self._comparator.update_wall_seconds
+            return
         start = time.perf_counter()
         old = self._problem
         next_q = old.q.copy() if q is None else _vector(q, len(old.q), "q")
@@ -490,6 +511,8 @@ class PreparedPeakSolver:
         self.update_wall_seconds = time.perf_counter()-start
 
     def reset(self):
+        if self._comparator is not None:
+            return self._comparator.reset()
         start = time.perf_counter()
         if self.method in ("epigraph-daqp", "epigraph-daqp-prox"):
             # DAQP's pinned API has no reset operation. Rebuilding is explicit;
@@ -503,6 +526,8 @@ class PreparedPeakSolver:
         self.reset_wall_seconds = time.perf_counter()-start
 
     def solve(self):
+        if self._comparator is not None:
+            return self._comparator.solve()
         start = time.perf_counter()
         backend_settings = None
         if self.method in ("epigraph-daqp", "epigraph-daqp-prox"):
