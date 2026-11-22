@@ -20,5 +20,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install ".[dev,comparisons]"
-      - run: python -m pytest -q -rs
+      - name: Test base SDK and official comparison adapters
+        run: |
+          python -c "print('CPU learning collection is excluded from hosted native CI')"
+          python -m pytest -q -rs
       - run: python -m build
